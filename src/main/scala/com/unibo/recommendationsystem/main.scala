@@ -1,5 +1,6 @@
 package com.unibo.recommendationsystem
 
+import org.apache.spark
 import org.apache.spark.ml.feature.StringIndexer
 import org.apache.spark.ml.recommendation.ALS
 import org.apache.spark.sql.functions._
@@ -11,14 +12,17 @@ object main {
       .builder
       .appName("recommendationsystem")
       .config("spark.master", "local")
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .config("spark.kryoserializer.buffer.max", "512m")
       .getOrCreate()
+
 
     val csvFilePath = "C:\\Users\\User\\IdeaProjects\\recommendationsystem\\steam-dataset\\recommendations.csv"
 
     val rawData = spark.read
       .option("header", "true")
       .option("inferSchema", "true")
-      .csv(csvFilePath) // Substitute your actual data file path
+      .csv(csvFilePath)
 
     // Data Preprocessing
     val userIndexer = new StringIndexer()
