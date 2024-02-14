@@ -1,10 +1,9 @@
 package com.unibo.recommendationsystem
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.ml.feature.StringIndexer
 import org.apache.spark.ml.recommendation.ALS
-import org.apache.spark.ml.feature.{StringIndexer, IndexToString}
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object main {
   def main(args: Array[String]): Unit = {
@@ -14,18 +13,36 @@ object main {
       .config("spark.master", "local")
       .getOrCreate()
 
+    val csvFilePath = "C:\\Users\\User\\IdeaProjects\\recommendationsystem\\steam-dataset\\recommendations.csv"
 
-    val csvFilePath = "C:\\Users\\User\\IdeaProjects\\recommendationsystem\\steam-dataset\\games.csv"
+    val rawData = spark.read
+      .option("header", "true")
+      .option("inferSchema", "true")
+      .csv(csvFilePath) // Substitute your actual data file path
 
-    // Leggi il file CSV come DataFrame
-    val csvDataFrame: DataFrame = spark.read
-      .format("csv")
-      .option("header", "true") // Se la prima riga contiene i nomi delle colonne
-      .option("inferSchema", "true") // Infere automaticamente i tipi di dati delle colonne
-      .load(csvFilePath)
+    // Data Preprocessing
+    val userIndexer = new StringIndexer()
+      .setInputCol("user_id")
+      .setOutputCol("user_id_indexed")
+    val userIndexedData = userIndexer.fit(rawData).transform(rawData)
 
-    // Mostra il DataFrame
-    csvDataFrame.show()
+    val appIndexer = new StringIndexer()
+      .setInputCol("app_id")
+      .setOutputCol("app_id_indexed")
+    val data = appIndexer.fit(userIndexedData).transform(userIndexedData)
+
+//Train ALS Model
+//    val als = new ALS()
+//      .setUserCol("user_id_indexed")
+//      .setItemCol("app_id_indexed")
+//      .setRatingCol("hours")
+//      .setRank(10)
+//      .setMaxIter(10)
+//      .setRegParam(0.1)
+//      .setImplicitPrefs(true)
+//
+//    val model = als.fit(data)
+
     spark.stop()
   }
 }
