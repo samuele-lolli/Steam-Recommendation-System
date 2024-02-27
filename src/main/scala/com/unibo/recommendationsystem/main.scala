@@ -27,9 +27,14 @@ object main {
       val ratingsRDD: RDD[Rating] = file.filter(line => !line.startsWith("app_id")).map(line => line.split(",") match {
         case Array(app, _, _, _, _, hours, user, _) => Rating(user.toInt, app.toInt, hours.toDouble)
       })
-      println(ratingsRDD.first()) // Rating(196,242,3.0)
+
+      val limitedRatingsRDD = ratingsRDD.mapPartitions(iter => {
+        val limitedRatingsArray = iter.take(1000000).toArray
+        limitedRatingsArray.iterator
+      })
+      println(limitedRatingsRDD.first()) // Rating(196,242,3.0)
       // return processed data as Spark RDD
-      ratingsRDD
+      limitedRatingsRDD
     }
 
     def saveModel(context: SparkContext, model:MatrixFactorizationModel, modelPath: String): Unit ={
@@ -37,7 +42,7 @@ object main {
         model.save(context, modelPath)
       }
       catch {
-        case e: Exception => println("Error Happened when saving model!!!")
+        case e: Exception => println(e)
       }
       finally {
       }
