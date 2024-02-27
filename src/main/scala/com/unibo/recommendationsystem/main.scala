@@ -1,60 +1,58 @@
 package com.unibo.recommendationsystem
 
-import org.apache.spark.ml.feature.StringIndexer
-import org.apache.spark.ml.recommendation.ALS
-import org.apache.spark.sql.SparkSession
-
+import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 object main {
   def main(args: Array[String]): Unit = {
 
-    /* Inizializzazione SparkSession */
-    val spark = SparkSession
-      .builder
-      .appName("recommendationsystem")
-      .config("spark.master", "local")
-      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .config("spark.kryoserializer.buffer.max", "512m")
-      .getOrCreate()
+    println("---------Initializing Spark-----------")
 
-    /* Path per il dataset */
-    val csvFilePath = "C:\\Users\\User\\IdeaProjects\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val sparkConf = new SparkConf()
+      .setAppName("RecommenderTrain")
+      .setMaster("local")
+    val sc = new SparkContext(sparkConf)
+    println("master=" + sc.master)
 
-    /* Caricamento dei dati nella forma originale */
-    val rawData = spark.read
-      .option("header", "true")
-      .option("inferSchema", "true")
-      .csv(csvFilePath)
+    println("----------Setting up data path----------")
+    val dataPath = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv" // local for test
+    val modelPath = "C:\\Users\\samue\\recommendationsystem\\src\\main\\scala\\com\\unibo\\recommendationsystem" // local for test
+    //val checkpointPath = "C:\\Users\\samue\\recommendationsystem\\src\\main\\scala\\com\\unibo\\recommendationsystem" // local for test
+    //sc.setCheckpointDir(checkpointPath) // checkpoint directory (to avoid stackoverflow error)
 
-    /* Pre-processing dei dati (a cosa serve sta roba? Mistero..) */
-    val userIndexer = new StringIndexer()
-      .setInputCol("user_id")
-      .setOutputCol("user_id_indexed")
-    val userIndexedData = userIndexer.fit(rawData).transform(rawData)
+    def preprocessing(sc: SparkContext, dataPath:String): RDD[Rating] ={
+      // reads data from dataPath into Spark RDD.
+      val file: RDD[String] = sc.textFile(dataPath)
+      // only takes in first three fields (userID, itemID, rating).
+      val ratingsRDD: RDD[Rating] = file.filter(line => !line.startsWith("app_id")).map(line => line.split(",") match {
+        case Array(app, _, _, _, _, hours, user, _) => Rating(user.toInt, app.toInt, hours.toDouble)
+      })
+      println(ratingsRDD.first()) // Rating(196,242,3.0)
+      // return processed data as Spark RDD
+      ratingsRDD
+    }
 
-    val appIndexer = new StringIndexer()
-      .setInputCol("app_id")
-      .setOutputCol("app_id_indexed")
-    val data = appIndexer.fit(userIndexedData).transform(userIndexedData)
+    def saveModel(context: SparkContext, model:MatrixFactorizationModel, modelPath: String): Unit ={
+      try {
+        model.save(context, modelPath)
+      }
+      catch {
+        case e: Exception => println("Error Happened when saving model!!!")
+      }
+      finally {
+      }
+    }
 
-    /* Inizializzazione e training del modello ALS (KNN) */
-    println("INIZIO DEL TRAINING DI ALS MODEL.........")
-    val als = new ALS()
-      .setUserCol("user_id_indexed")
-      .setItemCol("app_id_indexed")
-      .setRatingCol("hours")
-      .setRank(10)
-      .setMaxIter(10)
-      .setRegParam(0.1)
-      .setImplicitPrefs(true)
+    println("---------Preparing Data---------")
+    val ratingsRDD: RDD[Rating] = preprocessing(sc, dataPath)
+    //ratingsRDD.checkpoint() // checkpoint data to avoid stackoverflow error
 
-    val model = als.fit(data)
+    println("---------Training---------")
+    println("Start ALS training, rank=5, iteration=20, lambda=0.1")
+    val model: MatrixFactorizationModel = ALS.train(ratingsRDD, 5, 20, 0.1)
 
-    /* Generazione di 5 raccomandazioni per l'utente con id=0 */
-    import spark.implicits._
-    val userId = 0
-    val userSubset = Seq(userId).toDF("user_id_indexed") // Create the DataFrame
-    val recommendations = model.recommendForUserSubset(userSubset, 5)
-    recommendations.show()
-    spark.stop()
+    println("----------Saving Model---------")
+    saveModel(sc, model, modelPath)
+    sc.stop()
   }
 }
