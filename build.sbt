@@ -6,9 +6,16 @@ lazy val root = (project in file("."))
   .settings(
     name := "untitled"
   )
+//libraryDependencies += "com.fasterxml.jackson.databind" % "jackson-databind" % "2.13.0"
 
 
 val sparkVersion = "3.5.0"
+
+/*artifactName := { (sv: ScalaVersion, module: ModuleID, artifact: Artifact) =>
+  "recommendation_system.jar" }*/
+
+//libraryDependencies += "com.google.cloud.spark" %% "spark-bigquery" % "0.29.0"
+
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion,
