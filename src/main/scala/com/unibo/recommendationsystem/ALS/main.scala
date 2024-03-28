@@ -1,9 +1,7 @@
-package com.unibo.recommendationsystem
+package com.unibo.recommendationsystem.ALS
 
-import org.apache.spark.ml.feature.HashingTF
 import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 object main {
   def main(args: Array[String]): Unit = {

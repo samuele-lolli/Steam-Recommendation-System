@@ -1,10 +1,10 @@
-package com.unibo.recommendationsystem
+package com.unibo.recommendationsystem.ALS
 
 import org.apache.spark.mllib.recommendation.MatrixFactorizationModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
-import java.io.{File, FileNotFoundException, PrintWriter}
+import java.io.{File, PrintWriter}
 
 object test {
   def main(args: Array[String]): Unit = {

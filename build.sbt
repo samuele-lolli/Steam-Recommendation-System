@@ -1,26 +1,25 @@
-ThisBuild / version := "1.0.0-SNAPSHOT"
+ThisBuild / version := "0.1.0-SNAPSHOT"
 
-ThisBuild / scalaVersion := "2.13.12"
+ThisBuild / scalaVersion := "2.12.14"
+
 
 lazy val root = (project in file("."))
   .settings(
-    name := "untitled"
+    name := "recommendationsystem",
+    assemblyMergeStrategy := {
+      case PathList("META-INF", _*) => MergeStrategy.discard
+      case x => MergeStrategy.first
+    }
   )
-//libraryDependencies += "com.fasterxml.jackson.databind" % "jackson-databind" % "2.13.0"
 
+enablePlugins(sbtassembly.AssemblyPlugin)
 
-val sparkVersion = "3.5.0"
-
-/*artifactName := { (sv: ScalaVersion, module: ModuleID, artifact: Artifact) =>
-  "recommendation_system.jar" }*/
-
-//libraryDependencies += "com.google.cloud.spark" %% "spark-bigquery" % "0.29.0"
-
+val sparkVersion = "3.3.2"
 
 libraryDependencies ++= Seq(
-  "org.apache.spark" %% "spark-core" % sparkVersion,
-  "org.apache.spark" %% "spark-sql" % sparkVersion,
+  "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
+  "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
   "org.apache.spark" %% "spark-mllib" % sparkVersion,
   "org.apache.spark" %% "spark-streaming" % sparkVersion,
-  "org.scala-lang" % "scala-library" % "2.13.12"
+  "org.scala-lang" % "scala-library" % "2.12.14"
 )
