@@ -23,7 +23,7 @@ object tfidfMLlib {
     val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
 
     val t4 = System.nanoTime()
-
+//
     //val modelPath = "/Users/leonardovincenzi/IdeaProjects/scalaProject/out/results.txt"
     //val sc = spark.sparkContext
 

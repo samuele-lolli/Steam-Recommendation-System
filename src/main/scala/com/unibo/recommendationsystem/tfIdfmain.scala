@@ -27,7 +27,7 @@ object tfIdfmain {
     val selectedGames = dfGames.select("app_id", "title")
 
 
-
+    //
     val merged = selectedRec.join(selectedGames, Seq("app_id"), "inner")
 
     val cleanMerge = merged
