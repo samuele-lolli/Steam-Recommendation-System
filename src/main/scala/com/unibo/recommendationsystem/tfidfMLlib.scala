@@ -54,6 +54,7 @@ object tfidfMLlib {
     testingDF.printSchema()
 
      */
+    val t3 = System.nanoTime()
 
 
     // Tokenization
@@ -61,6 +62,9 @@ object tfidfMLlib {
       .setInputCol("title")
       .setOutputCol("words")
     val tokenizedData = tokenizer.transform(cleanMerge)
+
+    tokenizedData.printSchema()
+    tokenizedData.show()
 
     def flattenWords = udf((s: Seq[Seq[String]]) => s.flatten)
 
@@ -84,11 +88,16 @@ object tfidfMLlib {
     val idfModel = idf.fit(featurizedData)
     val rescaledData = idfModel.transform(featurizedData)
 
+    val t2 = System.nanoTime()
+
+    rescaledData.printSchema()
+    rescaledData.show()
 
     val asDense = udf((v: Vector) => v.toDense)
 
     val newDf = rescaledData
       .withColumn("dense_features", asDense(col("features")))
+
 
 
 
@@ -157,7 +166,8 @@ object tfidfMLlib {
 
     val t1 = System.nanoTime()
 
-    println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
+    println("\n\nExecution time(Recommendation with Cosine Similarity):\t"+ (t1-t0)/1000000 + "ms\n")
+    println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
     println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
   }
 }
