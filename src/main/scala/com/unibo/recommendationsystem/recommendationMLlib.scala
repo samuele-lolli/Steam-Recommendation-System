@@ -8,7 +8,7 @@ import org.apache.spark.sql.functions._
 
 
 
-object tfidfMLlib {
+object recommendationMLlib {
 
   def main(args: Array[String]): Unit = {
     val spark = SparkSession

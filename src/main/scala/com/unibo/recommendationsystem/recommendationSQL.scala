@@ -4,7 +4,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, collect_list, concat_ws, count, countDistinct, explode, lower, map_from_arrays, regexp_replace, split, trim, udf}
 
-object tfIdfmain {
+object recommendationSQL {
   def main(args: Array[String]): Unit = {
     val spark = SparkSession
       .builder
@@ -26,8 +26,6 @@ object tfIdfmain {
 
     val selectedGames = dfGames.select("app_id", "title")
 
-
-    //
     val merged = selectedRec.join(selectedGames, Seq("app_id"), "inner")
 
     val cleanMerge = merged
@@ -182,34 +180,37 @@ root
  |-- word: string (nullable = true)
      */
 
-    //dfDF.show()
+    dfDF.show()
+    println("dfDF")
     //dfDF.printSchema()
 
     /*
     +------------+------------------+
 |        word|document_frequency|
-+------------+------------------+
-|       poppy|               164|
-| battlefront|               797|
-|         few|               192|
-|   connected|               108|
-|         art|               855|
-|     blaster|               338|
-|transference|                16|
-|      online|              3394|
-|        hope|               548|
-|   firewatch|               687|
-|       still|               272|
-|      gloria|               100|
-|      waters|               256|
-|       trail|               274|
-|       anime|               247|
-|  roundabout|                33|
-|      harder|               313|
-|        some|                39|
-|    folletts|               128|
-|       those|                40|
-+------------+------------------+
++-----------+------------------+
+|       word|document_frequency|
++-----------+------------------+
+|battlefront|              6662|
+|   peekaboo|               682|
+|        few|              2007|
+|      poppy|              2562|
+|       hope|              3817|
+|     online|             39636|
+|       guts|               745|
+|        art|              6190|
+|      still|              2360|
+|      anime|              1536|
+|       2069|               186|
+|    blaster|              2449|
+|  connected|              1188|
+|     travel|              1462|
+|  firewatch|              8532|
+|      trail|              1444|
+|     harder|              3866|
+|     waters|              1962|
+|   everyday|               942|
+|  neverseen|               456|
++-----------+------------------+
 only showing top 20 rows
 
 root
@@ -218,7 +219,8 @@ root
      */
 
     val totalDocs = filteredData.select(count("user_id")).first()
-
+    println("totalDocs " + totalDocs)
+//213364
     val rdd = dfDF.rdd
 
     val idfRDD = rdd.map { row =>
@@ -386,7 +388,7 @@ root
 
     val t0 = System.nanoTime()
 
-    def getTopGamesForUserId(userId: Int, tfidfValues: RDD[(Int, Map[String, Double])], numRecommendations: Int = 5): Array[(Int, Double)] = {
+    def getSimilarUsers(userId: Int, tfidfValues: RDD[(Int, Map[String, Double])]): Array[(Int, Double)] = {
 
       val userGames = tfidfValues.filter(_._1 == userId).first()._2
 
@@ -394,14 +396,14 @@ root
         .map { case (otherUserId, otherUserGames) =>
           (otherUserId, computeCosineSimilarity(userGames, otherUserGames)) // Calculate similarity here
         }.sortBy(-_._2)
-
+        .collect()
+        .take(3)
     }
-      .collect()
-      .take(3)
 
 
 
-    val recommendations = getTopGamesForUserId(targetUser, userSimRDD)
+
+    val recommendations = getSimilarUsers(targetUser, userSimRDD)
 
     //recommendations.foreach(println)
     //println("Recommendations Top3")
@@ -411,14 +413,9 @@ root
     (6222146,0.6917861806899793)
      */
 
-    /*  6019065
-    6222146
-    8605254
+    //val datasetDF = cleanMerge
 
- */
-    val datasetDF = cleanMerge.toDF()
-
-    val titlesPlayedByTargetUser = datasetDF
+    val titlesPlayedByTargetUser = cleanMerge
       .filter(col("user_id") === targetUser)
       .select("title")
       .distinct() // In case the target user has duplicates
@@ -429,7 +426,7 @@ root
     val userIdsToFind = recommendations.map(_._1).toSet
 
     // 3. Filter datasetDF
-    val filteredDF = datasetDF.filter(
+    val filteredDF = cleanMerge.filter(
       col("user_id").isin(userIdsToFind.toSeq: _*) && // User ID is recommended
         !col("title").isin(titlesPlayedByTargetUser: _*) &&
         col("is_recommended") === true
@@ -478,7 +475,7 @@ only showing top 20 rows
       .agg(collect_list("user_id").alias("users"))
 
     /*
-        finalRecommendations.show()
+
 
         | app_id|                   title|               users|
     +-------+------------------------+--------------------+
