@@ -1,6 +1,10 @@
+import sbtassembly.AssemblyPlugin.autoImport.assembly
+
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
 ThisBuild / scalaVersion := "2.12.14"
+
+enablePlugins(sbtassembly.AssemblyPlugin)
 
 
 lazy val root = (project in file("."))
@@ -9,10 +13,10 @@ lazy val root = (project in file("."))
     assemblyMergeStrategy := {
       case PathList("META-INF", _*) => MergeStrategy.discard
       case x => MergeStrategy.first
-    }
+    },
+    assembly / assemblyJarName := "recommendationMLlib.jar"
   )
 
-enablePlugins(sbtassembly.AssemblyPlugin)
 
 val sparkVersion = "3.3.2"
 

@@ -18,9 +18,14 @@ object recommendationMLlib {
       .getOrCreate()
     println("---------Initializing Spark-----------")
 
-    // val dataPath = "gs://recommendationbucket2324/data/recommendations.csv" // local for test
-    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    //val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
+    //val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+
+    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
+
+    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
+
+
 
     val t4 = System.nanoTime()
 //
@@ -63,8 +68,8 @@ object recommendationMLlib {
       .setOutputCol("words")
     val tokenizedData = tokenizer.transform(cleanMerge)
 
-    tokenizedData.printSchema()
-    tokenizedData.show()
+    //tokenizedData.printSchema()
+    //tokenizedData.show()
 
     def flattenWords = udf((s: Seq[Seq[String]]) => s.flatten)
 
@@ -90,8 +95,8 @@ object recommendationMLlib {
 
     val t2 = System.nanoTime()
 
-    rescaledData.printSchema()
-    rescaledData.show()
+   // rescaledData.printSchema()
+   // rescaledData.show()
 
     val asDense = udf((v: Vector) => v.toDense)
 
@@ -139,13 +144,20 @@ object recommendationMLlib {
 
     val drop = filtered.drop("dense_features", "dense_frd", "hashedFeatures")
 
-    drop.show()
+   // drop.show()
 
 
 
     val usersSimilar = drop.limit(3).select(col("user_id").alias("user"))
-    println("usersSimilar")
     usersSimilar.collect().foreach(println)
+    println("Recommendations Top3")
+    /*
+[6019065]
+[8605254]
+[6222146]
+Recommendations Top3
+     */
+
 
     val resultDF = cleanMerge.join(usersSimilar, cleanMerge("user_id") === usersSimilar("user")).drop(col("user_id"))
 
@@ -161,8 +173,7 @@ object recommendationMLlib {
       .groupBy("app_id", "title")
       .agg(collect_list("user").alias("users"))
 
-    //excludedGamesDF.show(false)
-    aggregatedDF.collect().foreach(println)
+    aggregatedDF.show()
 
     val t1 = System.nanoTime()
 
