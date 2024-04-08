@@ -59,7 +59,7 @@ object recommendationMLlib {
     testingDF.printSchema()
 
      */
-    val t3 = System.nanoTime()
+    val t2 = System.nanoTime()
 
 
     // Tokenization
@@ -93,7 +93,7 @@ object recommendationMLlib {
     val idfModel = idf.fit(featurizedData)
     val rescaledData = idfModel.transform(featurizedData)
 
-    val t2 = System.nanoTime()
+    val t3 = System.nanoTime()
 
    // rescaledData.printSchema()
    // rescaledData.show()
@@ -174,6 +174,34 @@ Recommendations Top3
       .agg(collect_list("user").alias("users"))
 
     aggregatedDF.show()
+
+    /*
+    +-------+--------------------+------------------+
+| app_id|               title|             users|
++-------+--------------------+------------------+
+|1105670|      the last spell|         [6019065]|
+| 629760|             mordhau|         [6019065]|
+|1648470|                    |         [8605254]|
+|1500750|         tauren maze|         [8605254]|
+|1263370|        seek girlfog|[8605254, 6019065]|
+|1013130|  happy anime puzzle|         [8605254]|
+|1397350|  - long time no see|         [8605254]|
+|1148510|        pretty angel|[6019065, 6222146]|
+|1460040|        love fantasy|         [8605254]|
+|1153430|           love wish|[8605254, 6019065]|
+|1426110|love n dream virt...|         [8605254]|
+|1060670|       taboos cracks|[6222146, 6019065]|
+|1468160|        cube racer 2|         [6019065]|
+|1211360|            neomorph|[8605254, 6222146]|
+|1146630|       yokais secret|[6019065, 8605254]|
+| 355980|     dungeon warfare|         [6019065]|
+| 391220|rise of the tomb ...|         [8605254]|
+|1274610|leslove.club emil...|         [8605254]|
+|1182760|           starlight|         [8605254]|
+|1605010|      adorable witch|         [8605254]|
++-------+--------------------+------------------+
+only showing top 20 rows
+     */
 
     val t1 = System.nanoTime()
 

@@ -180,8 +180,8 @@ root
  |-- word: string (nullable = true)
      */
 
-    dfDF.show()
-    println("dfDF")
+   // dfDF.show()
+   // println("dfDF")
     //dfDF.printSchema()
 
     /*
@@ -219,7 +219,7 @@ root
      */
 
     val totalDocs = filteredData.select(count("user_id")).first()
-    println("totalDocs " + totalDocs)
+   // println("totalDocs " + totalDocs)
 //213364
     val rdd = dfDF.rdd
 
@@ -404,6 +404,8 @@ root
 
 
     val recommendations = getSimilarUsers(targetUser, userSimRDD)
+    recommendations.foreach(println)
+    println("Recommendations Top3")
 
     //recommendations.foreach(println)
     //println("Recommendations Top3")
@@ -502,7 +504,8 @@ only showing top 20 rows
      */
 
 
-    finalRecommendations.collect().foreach(println)
+    finalRecommendations.show()
+
     /*
 [750920,shadow of the tomb raider: definitive edition,WrappedArray(8605254)]
 [410900,forts,WrappedArray(6019065)]
