@@ -2,116 +2,104 @@ package com.unibo.recommendationsystem
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession.builder
+import org.apache.spark.sql.functions.{col, collect_list, count, explode, lower, regexp_replace, split, trim, udf}
 
-object recommendationRDD {
+object recommendationRDDsql {
   def main(args: Array[String]): Unit = {
     val spark = builder
-      .appName("sparkRecommend")
+      .appName("recommendationsystem")
       .config("spark.master", "local[*]")
       .getOrCreate()
     //println("---------Initializing Spark-----------")
 
-    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    val dataPathRec: String = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
+    val dataPathGames: String = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
 
     val t4 = System.nanoTime()
 
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
     val dfGames = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathGames)
 
-
-    val rddRec = dfRec.rdd
-    val rddGames = dfGames.rdd
+    val selectedRec = dfRec.select("app_id", "user_id", "is_recommended") //"customer_id",
 
 
-    val selectedRecRDD = rddRec.map { row =>
-      val appId = row.getInt(0)
-      val recommended = row.getBoolean(4)
-      val user = row.getInt(6).toString
-      (appId, recommended, user)
-    }
-
-    val selectedGamesRDD = rddGames.map { row =>
-      val appId = row.getInt(0)
-      val title = row.getString(1)
-      (appId, title)
-    }
-
-    val titleDict = selectedGamesRDD.collectAsMap()
-
-    val mergedRDD = selectedRecRDD.map {
-      case  (appId, recommended , user) =>
-        val title = titleDict.getOrElse(appId, "") // Handle potential missing titles
-        (appId, recommended, user, title)
-    }
+    val selectedGames = dfGames.select("app_id", "title")
 
 
-    def transformTitle(row: (Int, Boolean, String, String)): (Int, Boolean, String, String) = {
-      val appId = row._1
-      val recommended = row._2
-      val user = row._3
-      var title = row._4
 
-      // Apply transformations to the title
-      title = title.toLowerCase()
-        .trim()
-        .replaceAll("\\s+", " ")
+    val merged = selectedRec.join(selectedGames, Seq("app_id"), "inner")
 
-      (appId, recommended, user, title)
-    }
+    val cleanMerge = merged
+      //.withColumn("title", regexp_replace(col("title"), "[^\\w\\s.,!?\\-]+", ""))
+      .withColumn("title", lower(trim(regexp_replace(col("title"), "\\s+", " "))))
 
-    val cleanMergeRDD = mergedRDD.map(transformTitle)
+/*
+    val splits = cleanMerge.randomSplit(Array(0.7, 0.3), seed=123L) // 70/30 split
+    val trainingDF = splits(0)
+    val testingDF = splits(1)
+ */
+
+
 
     val t5 = System.nanoTime()
 
 
     val t2 = System.nanoTime()
 
+    val dataset = cleanMerge.withColumn("words", split(col("title"), "\\s+"))
+    // dataset.printSchema()
+    // dataset.show()
 
-    def splitTitle(row: (Int, Boolean, String, String)): (Int, Boolean, String, Array[String]) = {
-      val appId = row._1
-      val recommended = row._2
-      val user = row._3
-      val title = row._4
+    def flattenWords = udf((s: Seq[Seq[String]]) => s.flatten)
 
-      val words = title.split("\\s+")
-      (appId, recommended, user, words)
+
+    val aggregateData = dataset.groupBy("user_id").agg(flattenWords(collect_list("words").as("words")))
+
+    val filteredData = aggregateData.filter(count("words") >= 20)
+
+    //filteredData.show()
+    //filteredData.printSchema()
+
+
+    val explodedDF = filteredData.withColumn("word", explode(col("UDF(collect_list(words) AS words)")))
+      .select("user_id", "word")
+
+    //println("Exploded show")
+    //explodedDF.show()
+    /*
+    +-------+----------+
+|user_id|      word|
++-------+----------+
+|   2821|       tom|
+|   2821|  clancy's|
+|   2821|     ghost|
+|   2821|    recon®|
+|   2821| wildlands|
+|   2821|    prison|
+|   2821| architect|
+|   2821|       the|
+|   2821| escapists|
+|   2821|         2|
+|   2821|assassin's|
+|   2821|    creed®|
+|   2821|   odyssey|
+|   2821|    police|
+|   2821|simulator:|
+|   2821|    patrol|
+|   2821|  officers|
+|   2821|     ready|
+|   2821|        or|
+|   2821|       not|
++-------+----------+
+only showing top 20 rows
+     */
+    val explodedRDD = explodedDF.rdd
+
+    val userWordDataset = explodedRDD.map { row =>
+      val user = row.getInt(0).toString // Assuming word is at index 0
+      val word = row.getString(1) // Assuming document_frequency is at index 1
+      (user, word)
     }
-
-    val datasetRDD = cleanMergeRDD.map(splitTitle)
-
-    def flattenWordsRDD(wordLists: Seq[Array[String]]): Array[String] = {
-      wordLists.flatten.toArray
-    }
-
-    // Perform the aggregation
-    val aggregateDataRDD = datasetRDD
-      .map { case (_, _, user, words) => (user, words) } // Map to (user, words)
-      .groupByKey() // Group by user
-      .mapValues { wordsIterable =>
-        flattenWordsRDD(wordsIterable.toSeq) // Flatten words for each user
-      }
-
-    val prova = aggregateDataRDD.filter{ case ( userId, _) => userId.equals("2821")}
-    prova.collect().foreach { case (key, wordArray) =>
-      println(s"Key: $key")
-      println("Array:")
-      wordArray.foreach(println)
-    }
-    // println("aggregateDataRDD: " + aggregateDataRDD.count()) //aggregateDataRDD: 13781059
-    // println("filteredDataRDD: " + filteredDataRDD.count()) //filteredDataRDD:     1178775
-
-    val filteredDataRDD = aggregateDataRDD.filter { case (_, words) => words.length >= 20 }
-
-    println("filteredDataRDD: " + filteredDataRDD.keys.count())
-    //filteredData: 1178775
-
-
-    val explodedRDD = aggregateDataRDD.flatMap { case (userId, words) =>
-      words.map(word => (userId, word))
-    }
-
-
 
     def calculateTFIDF(userWordsDataset: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
 
@@ -126,10 +114,7 @@ object recommendationRDD {
       // Function to calculate inverse document frequency (IDF)
       def calculateIDF(userWords: RDD[(String, String)]): Map[String, Double] = {
         val userCount = userWords.count()
-
-        //userCount:1178775
-
-        println("userCount:" + userCount)
+        // println("userCount:" + userCount) //userCount:213364
         val wordsCount = userWords
           .flatMap { case (user, words) =>
             words.split(",").distinct.map(word => (user, word)) // Include docId and make words distinct
@@ -138,12 +123,12 @@ object recommendationRDD {
           .groupByKey()
           .mapValues(_.toSet.size)
 
-
+        /*
         val test = wordsCount.filter(_._1.equals("battlefront"))
-        test.take(1).foreach(println)
-        println("battlefront:")
+          test.take(1).foreach(println)
+          println("battlefront:")
 
-
+         */
 
         val idfValues = wordsCount.map { case (word, count) => (word, math.log(userCount.toDouble / count)) }.collect().toMap[String,Double]
         idfValues
@@ -156,10 +141,6 @@ object recommendationRDD {
           val wordsString = wordsIterable.mkString(",")
           (userId, wordsString)
         }
-
-
-
-
       val idfValues = calculateIDF(groupedUserWords)
 
       val tfidfValues = groupedUserWords.map { case (user, words) =>
@@ -186,10 +167,7 @@ object recommendationRDD {
      */
 
 
-    val tfidfValues = calculateTFIDF(explodedRDD)
-
-    tfidfValues.take(20).foreach(println)
-    println("tfidfValues")
+    val tfidfValues = calculateTFIDF(userWordDataset)
 
     val t3 = System.nanoTime()
 
@@ -362,7 +340,7 @@ userGames:
         }
         .collect()
         .sortBy(-_._2)
-        .take(10)
+        .take(3)
     }
 
 
@@ -373,58 +351,113 @@ userGames:
 (6019065,0.7104614052219436)
 (6222146,0.7004068669317693)
 (8605254,0.6845741107525737)
-
-
-    /*
-(10941911,0.7293625797795579)
-(14044364,0.7263267622929318)
-(4509885,0.7186991307198306)
-(3278010,0.7159065615500113)
-(6019065,0.7126999191199811)
-(7889674,0.7113882151776377)
-(1216253,0.7088144049757779)
-(144350,0.7063527142603677)
-(6222146,0.7033717175918999)
-(10974221,0.7028838351034404)
-     */
-
    */
 
 
-    val titlesPlayedByTargetUserRDD = cleanMergeRDD
-      .filter { case (_, _, user, _) => user.equals(targetUser.toString)}
-      .map { case (_, _, _, title) => title }
-      .distinct()
+    val titlesPlayedByTargetUser = cleanMerge
+      .filter(col("user_id") === targetUser)
+      .select("title")
+      .distinct() // In case the target user has duplicates
+      .collect()
 
-    val titlesPlayedByTargetUserSet = titlesPlayedByTargetUserRDD.collect().toSet
-
-
-    val userIdsToFind = recommendations.take(3).map(_._1).toSet
-
-    val filteredRDD = cleanMergeRDD.filter { case (_, isRecommended, user, title) =>
-      userIdsToFind.contains(user) &&
-        !titlesPlayedByTargetUserSet.contains(title) &&
-        isRecommended
-    }
-
-    filteredRDD.take(10).foreach(println)
-    println("filteredRDD")
-
-    val finalRecommendations = filteredRDD.map { case (appId, _, user, title) =>
-      ((appId, title), user)
-    }
+    val titlesArray: Array[String] = titlesPlayedByTargetUser.map(_.getString(0))
 
 
+
+    // 2. Extract relevant user IDs from recommendations
+    val userIdsToFind = recommendations.map(_._1).toSet
+
+    // 3. Filter datasetDF
+    val filteredDF = cleanMerge.filter(
+      col("userid").isin(userIdsToFind.toSeq:_*) && // User ID is recommended
+        !col("title").isin(titlesArray:_*) &&
+        col("is_recommended") === true
+      // Title hasn't been played by the target user
+    )
+
+    val finalRecommendations = filteredDF.toDF().drop(col("is_recommended"))
+      .groupBy("app_id", "title")
+      .agg(collect_list("user_id").alias("users"))
+
+    finalRecommendations.show()
+
+    /*
+    +-------+------------------------+--------------------+
+| app_id|                   title|               users|
++-------+------------------------+--------------------+
+| 750920|    shadow of the tom...|           [8605254]|
+| 410900|                   forts|           [6019065]|
+| 629760|                 mordhau|           [6019065]|
+|1105670|          the last spell|           [6019065]|
+| 636480|              ravenfield|           [6019065]|
+| 450860|               andarilho|           [6222146]|
+|1101450|               miss neko|[6019065, 6222146...|
+| 760460|                    weed|           [8605254]|
+|1182760|               starlight|           [8605254]|
+| 932160|           late at night|           [8605254]|
+|1013130|      happy anime puzzle|           [8605254]|
+|1500750|             tauren maze|           [8605254]|
+|1263370|         seek girl:fog ⅰ|  [8605254, 6019065]|
+|1274610|    leslove.club: emi...|           [8605254]|
+|1274300|             cyber agent|           [6222146]|
+|1061010|          深海：即刻抉择|           [8605254]|
+|1648470|                谜语女孩|           [8605254]|
+|1397350|好久不见 - long time ...|           [8605254]|
+|1299120|    mosaique neko wai...|           [6222146]|
+| 385800|         nekopara vol. 0|           [6222146]|
++-------+------------------------+--------------------+
+only showing top 20 rows
+
+
+
+Execution time(preprocessing):	16032ms
+     */
 
     val t1 = System.nanoTime()
-
-    finalRecommendations.take(20).foreach(println)
-
 
     println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
     println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
     println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
 
+
+    /*
+    By using testingDF:  val splits = cleanMerge.randomSplit(Array(0.7, 0.3), seed=123L) // 70/30 split
+    val trainingDF = splits(0)
+    val testingDF = splits(1)
+
+    Results:
+    Recommendations Top3
+
+(230202,0.43239243771368824)
+(10465771,0.396194492973328)
+(9381143,0.3924736687978114)
+
+finalRecommendations:
+    +-------+--------------------+----------+
+| app_id|               title|     users|
++-------+--------------------+----------+
+| 407330|      sakura dungeon| [9381143]|
+|1326000|   sakura succubus 2| [9381143]|
+| 368500|assassin's creed®...| [9381143]|
+| 403640|        dishonored 2| [9381143]|
+| 203160|         tomb raider|[10465771]|
+| 365590|tom clancy’s the ...| [9381143]|
+|    550|       left 4 dead 2|[10465771]|
+| 227300|euro truck simula...|  [230202]|
+|1217060|      gunfire reborn|[10465771]|
+| 244450|men of war: assau...|[10465771]|
+| 319630|life is strange -...| [9381143]|
+| 952060|     resident evil 3| [9381143]|
+| 203140| hitman: absolution™| [9381143]|
+| 508440|totally accurate ...|[10465771]|
+|1178830|bright memory: in...| [9381143]|
+| 257510| the talos principle|[10465771]|
+| 221040|     resident evil 6|[10465771]|
+|1832640| mirror 2: project x|[10465771]|
+|1732740|         sakura hime|  [230202]|
+| 385800|     nekopara vol. 0| [9381143]|
++-------+--------------------+----------+
+
+     */
   }
 }
-
