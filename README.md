@@ -25,7 +25,7 @@ Download and install the IDE from [this link][intellij]
 2. **Java and Scala versions**  
    After the download of both plugins, click again on the cogwheel in the top right and select **Platform Settings**.
    From this menu, choose **SDKs**, then add a new SDK via the "plus" icon at the top of the window, and dowload Java JDK version 18.0.2. Once done, hit "Apply"
-   Then, always in the **Platform Settings** menu, choose **Global Libraries -> + -> Scala SDK -> Version 2.12.24 -> OK -> Apply**
+   Then, always in the **Platform Settings** menu, choose **Global Libraries → + → Scala SDK → Version 2.12.24 → OK → Apply**
 3. **Local Run**  
    If you want to run the project locally, you're good to go! Just select *current file* option in the run configurations toolbar in the top right of the IDE window.
 4. **Cloud Run**  
