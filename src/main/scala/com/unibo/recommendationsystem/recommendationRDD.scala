@@ -113,7 +113,6 @@ object recommendationRDD {
 
     // TF-IDF function definition
     def calculateTFIDF(userWordsDataset: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
-
       // Function to calculate term frequency (TF)
       def calculateTF(userWords: String): Map[String, Double] = {
         val wordsSplit = userWords.split(",")
