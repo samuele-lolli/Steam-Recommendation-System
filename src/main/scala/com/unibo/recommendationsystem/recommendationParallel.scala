@@ -125,7 +125,7 @@ only showing top 20 rows
       // Function to calculate inverse document frequency (IDF)
       def calculateIDF(userWords: ParArray[(String, String)]): ParMap[String, Double] = {
         val userCount = userWords.length
-        println("userCount:" + userCount) //userCount:22576
+        println("userCount:" + userCount)
 
         val wordsCount = userWords
           .flatMap { case (user, words) =>
@@ -134,13 +134,6 @@ only showing top 20 rows
           .map { case (user, word) => (word, user) } // Swap for grouping by word
           .groupBy(_._1) // Group by word
           .mapValues(values => values.map(_._2).toSet.size)
-
-        /*
-        val test = wordsCount.filter(_._1.equals("battlefront"))
-          test.take(1).foreach(println)
-          println("battlefront:")
-
-         */
 
         val idfValues = wordsCount.map { case (word, count) => (word, math.log(userCount.toDouble / count)) }.toMap[String, Double]
         idfValues
@@ -180,7 +173,6 @@ only showing top 20 rows
 
      */
 
-
     val tfidfValues = calculateTFIDF(userWordDataset)
 
     System.out.println("TfIdfValues parallel")
@@ -193,26 +185,11 @@ only showing top 20 rows
 
     val t3 = System.nanoTime()
 
-    /*val groupedTfIdf = tfidfValues
-      .groupBy {case (user, _) => user } // Group by userId
-      .map {case (user, mapWords) =>
-        map
-      }
-      .mapValues(listOfMaps => listOfMaps.reduce((map1, map2) =>
-        (map1 ++ map2).toArray.foldLeft(ParMap[String, Double]()) { (acc, word) =>
-          acc + (word -> (map1.getOrElse(word, 0.0) + map2.getOrElse(word, 0.0)))
-        }
-      ))
-
-     */
-
-
     /*groupedTfIdf.take(10).foreach(println)
 
 (8844264,Map(homefront -> 3.8525639747220923, superflight -> 4.133005195611655, 13th: -> 3.58679622384175, raider -> 3.022166508944552, is -> 2.608198483896157, siege -> 3.018564308554879, path -> 3.1929098270117473, mafia -> 3.1183250853212114, destinies -> 4.178788368114438, seek -> 3.7295988242922786, rainbow -> 3.1124216609782023, just -> 2.8775144552961076, starve -> 3.1447657626609735, (palyaço -> 5.137419031494264, or -> 3.1934673466726244, animatronics -> 4.395361532114902, don't -> 3.0870559089730305, - -> 1.9321782769796192, evi) -> 5.137419031494264, tom -> 2.760195058769771, deceit -> 3.835922303402875, die -> 2.889894511939887, 1 -> 2.8003893925776104, six® -> 3.1218699997770183, joana's -> 5.549599479280912, (classic) -> 3.4735459338091257, cause™ -> 3.231072402168477, stories: -> 3.6829020027765824, strange -> 3.0060832704329687, bacon -> 3.684380313711222, beat -> 3.295803939367056, house -> 3.2430850999179754, tomb -> 2.7140586295829046, toxikk™ -> 4.33986111966681, case: -> 4.50985497250276, fury -> 3.6941981166422284, sniper -> 3.1003354089149044, cop -> 4.322355697777849, episode -> 2.796697800377791, life -> 2.7373640766752225, friday -> 3.563512310507262, depth -> 3.7151434513094816, clancy's -> 2.9040271215123195, game -> 2.2883465260007396, 3 -> 2.2071301910721104, munin -> 4.952087115703669, together -> 3.226634023223586, of -> 1.463991810970572, ii -> 2.422220182656557, and -> 2.389886108868645, the -> 1.3303137387817439, clown -> 4.7765041006871565, blood -> 2.938983670425039))
 ......
      */
-
 
     def computeCosineSimilarity(vector1: ParMap[String, Double], vector2: ParMap[String, Double]): Double = {
       def dotProduct(v1: ParMap[String, Double], v2: ParMap[String, Double]): Double = {
@@ -228,7 +205,7 @@ only showing top 20 rows
       dotProduct(vector1, vector2) / (magnitude(vector1) * magnitude(vector2))
     }
 
-    val targetUser = 2591067 //2821
+    val targetUser = 2591067
 
     val t0 = System.nanoTime()
 
@@ -238,7 +215,6 @@ only showing top 20 rows
         case Some(entry) => Some(entry._2)
         case None => None
       }
-
 
       /*
           userGames.foreach(println)  user: 2591067
@@ -384,7 +360,6 @@ only showing top 20 rows
       sortedRDD.take(3)
     }
 
-
     val recommendations = getSimilarUsers(targetUser, tfidfValues)
 
     /*
@@ -409,10 +384,8 @@ Recommendations Top3
     val titlesArray: Array[String] = titlesPlayedByTargetUser.map(_.getString(0))
 
 
-    // 2. Extract relevant user IDs from recommendations
     val userIdsToFind = recommendations.map(_._1).toSet
 
-    // 3. Filter datasetDF for title hasn't been played by the target user
     val filteredDF = testingDF.filter(
       col("user_id").isin(userIdsToFind.toSeq: _*) && // User ID is recommended
         !col("title").isin(titlesArray: _*) &&

@@ -6,31 +6,31 @@ import org.apache.spark.sql.functions.{col, collect_list, count, explode, lower,
 
 object recommendationRDDsql {
   def main(args: Array[String]): Unit = {
+
+    //Initialize SparkSession
     val spark = builder
       .appName("recommendationsystem")
       .config("spark.master", "local[*]")
       .getOrCreate()
-    //println("---------Initializing Spark-----------")
 
     val dataPathRec: String = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
     val dataPathGames: String = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
 
     val t4 = System.nanoTime()
 
+    //Load dataset as Dataframe
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
     val dfGames = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathGames)
 
+    //Select useful columns
     val selectedRec = dfRec.select("app_id", "user_id", "is_recommended") //"customer_id",
-
-
     val selectedGames = dfGames.select("app_id", "title")
 
-
-
+    // Merge the dataframe for app_id
     val merged = selectedRec.join(selectedGames, Seq("app_id"), "inner")
 
+    // Clean the dataset from useless whitespaces
     val cleanMerge = merged
-      //.withColumn("title", regexp_replace(col("title"), "[^\\w\\s.,!?\\-]+", ""))
       .withColumn("title", lower(trim(regexp_replace(col("title"), "\\s+", " "))))
 
 /*
@@ -39,29 +39,29 @@ object recommendationRDDsql {
     val testingDF = splits(1)
  */
 
-
-
     val t5 = System.nanoTime()
-
-
     val t2 = System.nanoTime()
 
+    //Tokenization of titles on whitespaces : use split, a Spark function used to split strings into arrays of substrings.
     val dataset = cleanMerge.withColumn("words", split(col("title"), "\\s+"))
     // dataset.printSchema()
     // dataset.show()
 
+    // Converts nested sequences into a single list of strings, combining all inner lists
+
     def flattenWords = udf((s: Seq[Seq[String]]) => s.flatten)
 
-
+    // Aggregate tokenized data by user ID, then apply an aggregation function to each user's data.
+    // Then, use the user-defined function flattenWords to flatten the resulting list of lists of words into a single list
     val aggregateData = dataset.groupBy("user_id").agg(flattenWords(collect_list("words").as("words")))
-
+    // Filtering out all users with less than 20 words in their aggregated words list
     val filteredData = aggregateData.filter(count("words") >= 20)
 
     //filteredData.show()
     //filteredData.printSchema()
 
-
-    val explodedDF = filteredData.withColumn("word", explode(col("UDF(collect_list(words) AS words)")))
+    //Explode is a spark function to 'explode' an array column. It takes a column containing arrays and creates a new row for each element within the arrays
+    val explodedDF = filteredData.withColumn("word", explode(col("UDF(collect_list(words) AS words)")))  // Associates each word with its user_id independently from the rest of the array
       .select("user_id", "word")
 
     //println("Exploded show")
@@ -93,14 +93,18 @@ object recommendationRDDsql {
 +-------+----------+
 only showing top 20 rows
      */
+
+    // Loads explodedDF (dataframe) as an RDD
     val explodedRDD = explodedDF.rdd
 
+    // Create a dataset with tuples composed by (user, word) couples
     val userWordDataset = explodedRDD.map { row =>
       val user = row.getInt(0).toString // Assuming word is at index 0
       val word = row.getString(1) // Assuming document_frequency is at index 1
       (user, word)
     }
 
+    // TF-IDF function definition
     def calculateTFIDF(userWordsDataset: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
 
       // Function to calculate term frequency (TF)
@@ -114,7 +118,6 @@ only showing top 20 rows
       // Function to calculate inverse document frequency (IDF)
       def calculateIDF(userWords: RDD[(String, String)]): Map[String, Double] = {
         val userCount = userWords.count()
-        // println("userCount:" + userCount) //userCount:213364
         val wordsCount = userWords
           .flatMap { case (user, words) =>
             words.split(",").distinct.map(word => (user, word)) // Include docId and make words distinct
@@ -122,25 +125,24 @@ only showing top 20 rows
           .map { case (user, word) => (word, user) } // Swap for grouping by word
           .groupByKey()
           .mapValues(_.toSet.size)
-
         /*
         val test = wordsCount.filter(_._1.equals("battlefront"))
           test.take(1).foreach(println)
           println("battlefront:")
 
          */
-
         val idfValues = wordsCount.map { case (word, count) => (word, math.log(userCount.toDouble / count)) }.collect().toMap[String,Double]
         idfValues
       }
 
-
+      // Concatenates the words associated with each user into a comma-separated string
       val groupedUserWords = userWordsDataset
         .groupByKey() // Group by the userId
         .map { case (userId, wordsIterable) =>
           val wordsString = wordsIterable.mkString(",")
           (userId, wordsString)
         }
+
       val idfValues = calculateIDF(groupedUserWords)
 
       val tfidfValues = groupedUserWords.map { case (user, words) =>
@@ -166,11 +168,9 @@ only showing top 20 rows
 
      */
 
-
     val tfidfValues = calculateTFIDF(userWordDataset)
 
     val t3 = System.nanoTime()
-
 
     /*groupedTfIdf.take(10).foreach(println)
 
@@ -178,6 +178,8 @@ only showing top 20 rows
 ......
      */
 
+    // Input: two vectors as a map of words and weights
+    // Output: cosine similarity
     def computeCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double]): Double = {
       def dotProduct(v1: Map[String, Double], v2: Map[String, Double]): Double = {
         v1.foldLeft(0.0) { case (acc, (key, value)) =>
@@ -185,21 +187,22 @@ only showing top 20 rows
         }
       }
 
+      // Calculate vector magnitude (length)
       def magnitude(vector: Map[String, Double]): Double = {
         math.sqrt(vector.values.map(value => value * value).sum)
       }
-
+      // Calculate cosine similarity
       dotProduct(vector1, vector2) / (magnitude(vector1) * magnitude(vector2))
     }
 
-    val targetUser = 2591067 //2821
+    val targetUser = 2591067
 
     val t0 = System.nanoTime()
 
+    // Get users similar to the target
     def getSimilarUsers(userId: Int, tfidfValues: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
 
       val userGames = tfidfValues.filter(_._1.equals(userId.toString)).first()._2
-
       /*
       userGames.foreach(println)  user: 2591067
       (forgotten,3.6257512547749187)
@@ -332,18 +335,18 @@ only showing top 20 rows
 (the,1.3303137387817439)
 userGames:
        */
-
+      // Exclude the target user from recommendations
       tfidfValues.filter(_._1 != userId.toString) // Exclude the target user
         .map { case (otherUserId, otherUserGames) =>
-          //println("other: " + otherUserId)
+          // Calculate similarity to given user
           (otherUserId, computeCosineSimilarity(userGames,otherUserGames)) // Calculate similarity here
         }
         .collect()
-        .sortBy(-_._2)
-        .take(3)
+        .sortBy(-_._2) // Sort by highest score
+        .take(3) // Take the three best matches
     }
 
-
+    // Get recommendations for target users, based on previously calculated TF-IDF values
     val recommendations = getSimilarUsers(targetUser, tfidfValues)
     recommendations.foreach(println)
     println("Recommendations Top3")
@@ -353,7 +356,7 @@ userGames:
 (8605254,0.6845741107525737)
    */
 
-
+    // Extract games recommended by the target user
     val titlesPlayedByTargetUser = cleanMerge
       .filter(col("user_id") === targetUser)
       .select("title")
@@ -362,17 +365,14 @@ userGames:
 
     val titlesArray: Array[String] = titlesPlayedByTargetUser.map(_.getString(0))
 
-
-
-    // 2. Extract relevant user IDs from recommendations
+    // Extract relevant user IDs from recommendations
     val userIdsToFind = recommendations.map(_._1).toSet
 
-    // 3. Filter datasetDF
+    // Filter datasetDF to remove already played games
     val filteredDF = cleanMerge.filter(
       col("userid").isin(userIdsToFind.toSeq:_*) && // User ID is recommended
         !col("title").isin(titlesArray:_*) &&
         col("is_recommended") === true
-      // Title hasn't been played by the target user
     )
 
     val finalRecommendations = filteredDF.toDF().drop(col("is_recommended"))
@@ -415,49 +415,10 @@ Execution time(preprocessing):	16032ms
 
     val t1 = System.nanoTime()
 
+    // Calculating execution times
     println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
     println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
     println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
 
-
-    /*
-    By using testingDF:  val splits = cleanMerge.randomSplit(Array(0.7, 0.3), seed=123L) // 70/30 split
-    val trainingDF = splits(0)
-    val testingDF = splits(1)
-
-    Results:
-    Recommendations Top3
-
-(230202,0.43239243771368824)
-(10465771,0.396194492973328)
-(9381143,0.3924736687978114)
-
-finalRecommendations:
-    +-------+--------------------+----------+
-| app_id|               title|     users|
-+-------+--------------------+----------+
-| 407330|      sakura dungeon| [9381143]|
-|1326000|   sakura succubus 2| [9381143]|
-| 368500|assassin's creed®...| [9381143]|
-| 403640|        dishonored 2| [9381143]|
-| 203160|         tomb raider|[10465771]|
-| 365590|tom clancy’s the ...| [9381143]|
-|    550|       left 4 dead 2|[10465771]|
-| 227300|euro truck simula...|  [230202]|
-|1217060|      gunfire reborn|[10465771]|
-| 244450|men of war: assau...|[10465771]|
-| 319630|life is strange -...| [9381143]|
-| 952060|     resident evil 3| [9381143]|
-| 203140| hitman: absolution™| [9381143]|
-| 508440|totally accurate ...|[10465771]|
-|1178830|bright memory: in...| [9381143]|
-| 257510| the talos principle|[10465771]|
-| 221040|     resident evil 6|[10465771]|
-|1832640| mirror 2: project x|[10465771]|
-|1732740|         sakura hime|  [230202]|
-| 385800|     nekopara vol. 0| [9381143]|
-+-------+--------------------+----------+
-
-     */
   }
 }
