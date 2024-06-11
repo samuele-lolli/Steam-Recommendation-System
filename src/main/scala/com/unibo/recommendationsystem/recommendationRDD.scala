@@ -15,7 +15,7 @@ object recommendationRDD {
     val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
     val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
 
-    val t4 = System.nanoTime()
+    val tPreProcessingI = System.nanoTime()
 
     //Load dataset as Dataframe
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
@@ -68,12 +68,6 @@ object recommendationRDD {
     // Clean the dataset from useless whitespaces
     val cleanMergeRDD = mergedRDD.map(transformTitle)
 
-    val t5 = System.nanoTime()
-
-
-    val t2 = System.nanoTime()
-
-
     def splitTitle(row: (Int, Boolean, String, String)): (Int, Boolean, String, Array[String]) = {
       val appId = row._1
       val recommended = row._2
@@ -110,6 +104,10 @@ object recommendationRDD {
     val explodedRDD = filteredDataRDD.flatMap { case (userId, words) =>
       words.map(word => (userId, word)) // Creates a new tuple (userId, word) for each individual word
     }
+
+    val tPreProcessingF = System.nanoTime()
+
+    val tTFIDFI = System.nanoTime()
 
     // TF-IDF function definition
     def calculateTFIDF(userWordsDataset: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
@@ -158,7 +156,9 @@ object recommendationRDD {
 
     val tfidfValues = calculateTFIDF(explodedRDD)
 
-    val t3 = System.nanoTime()
+    val tTFIDFF = System.nanoTime()
+
+    val tCosineSimilarityI = System.nanoTime()
 
     // Input: two vectors as a map of words and weights
     // Output: cosine similarity
@@ -180,8 +180,6 @@ object recommendationRDD {
 
     val targetUser = 2591067
 
-    val t0 = System.nanoTime()
-
     // Get users similar to the target
     def getSimilarUsers(userId: Int, tfidfValues: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
 
@@ -200,6 +198,7 @@ object recommendationRDD {
 
     // Get recommendations for target users, based on previously calculated TF-IDF values
     val recommendations = getSimilarUsers(targetUser, tfidfValues)
+    val tCosineSimilarityF = System.nanoTime()
     recommendations.foreach(println)
 
     /*
@@ -215,6 +214,7 @@ object recommendationRDD {
 (10974221,0.7028838351034404)
      */
 
+    val tFinalRecommendI = System.nanoTime()
     // Extract games recommended by the target user
     val titlesPlayedByTargetUserRDD = cleanMergeRDD
       .filter { case (_, _, user, _) => user.equals(targetUser.toString)}
@@ -237,15 +237,18 @@ object recommendationRDD {
       ((appId, title), user)
     }
 
-    val t1 = System.nanoTime()
+    val tFinalRecommendF = System.nanoTime()
 
     finalRecommendations.take(20).foreach(println)
 
 
     // Calculating execution times
-    println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
-    println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
-    println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
+    println("\n\nExecution time(preprocessing):\t"+ (tPreProcessingF-tPreProcessingI)/1000000 + "ms\n")
+    println("\n\nExecution time(Tf-Idf calculation):\t"+ (tTFIDFF-tTFIDFI)/1000000 + "ms\n")
+    println("\n\nExecution time(Cosine similarity calculation):\t"+ (tCosineSimilarityF-tCosineSimilarityI)/1000000 + "ms\n")
+    println("\n\nExecution time(final recommendation):\t"+ (tFinalRecommendF-tFinalRecommendI)/1000000 + "ms\n")
+    println("\n\nExecution time(total):\t"+ (tFinalRecommendF-tFinalRecommendI)/1000000 + "ms\n") //da sistemare
+
 
   }
 }

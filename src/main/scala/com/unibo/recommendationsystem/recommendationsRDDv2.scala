@@ -5,7 +5,7 @@ import org.apache.spark.sql.SparkSession
 
 import scala.collection.Map
 
-object recommendtationsRDDv2 {
+object recommendationsRDDv2 {
   def main(args: Array[String]): Unit = {
     val spark = SparkSession.builder
       .appName("recommendationsystem")
@@ -15,6 +15,8 @@ object recommendtationsRDDv2 {
     // Percorsi dei dati
     val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
     val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
+
+    val t4 = System.nanoTime()
 
     // Caricamento dei dataset
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
@@ -53,6 +55,11 @@ object recommendtationsRDDv2 {
       val title = row._4.toLowerCase().trim().replaceAll("\\s+", " ")
       (appId, recommended, user, title)
     }.cache()
+
+    val t5 = System.nanoTime()
+
+
+    val t2 = System.nanoTime()
 
     val datasetRDD = cleanMergeRDD.map { row =>
       val appId = row._1
@@ -102,6 +109,8 @@ object recommendtationsRDDv2 {
 
     val tfidfValues = calculateTFIDF(explodedRDD).cache()
 
+    val t3 = System.nanoTime()
+
     def computeCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double]): Double = {
       def dotProduct(v1: Map[String, Double], v2: Map[String, Double]): Double = {
         v1.foldLeft(0.0) { case (acc, (key, value)) =>
@@ -117,6 +126,7 @@ object recommendtationsRDDv2 {
     }
 
     val targetUser = 2591067
+    val t0 = System.nanoTime()
 
     def getSimilarUsers(userId: Int, tfidfValues: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
       val userGames = tfidfValues.filter(_._1 == userId.toString).first()._2
@@ -150,7 +160,12 @@ object recommendtationsRDDv2 {
       ((appId, title), user)
     }
 
+    val t1 = System.nanoTime()
+
     finalRecommendations.take(20).foreach(println)
+    println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
+    println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
+    println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
 
     spark.stop()
   }
