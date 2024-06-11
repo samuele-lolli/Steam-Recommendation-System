@@ -16,7 +16,7 @@ object recommendationsRDDv2 {
     val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
     val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
 
-    val t4 = System.nanoTime()
+    val tPreProcessingI = System.nanoTime()
 
     // Caricamento dei dataset
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
@@ -81,6 +81,10 @@ object recommendationsRDDv2 {
       words.map(word => (userId, word))
     }.cache()
 
+    val tPreProcessingF = System.nanoTime()
+
+    val tTFIDFI = System.nanoTime()
+
     def calculateTFIDF(userWordsDataset: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
       def calculateTF(words: Array[String]): Map[String, Double] = {
         val totalWords = words.length.toDouble
@@ -109,7 +113,9 @@ object recommendationsRDDv2 {
 
     val tfidfValues = calculateTFIDF(explodedRDD).cache()
 
-    val t3 = System.nanoTime()
+    val tTFIDFF = System.nanoTime()
+
+    val tCosineSimilarityI = System.nanoTime()
 
     def computeCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double]): Double = {
       def dotProduct(v1: Map[String, Double], v2: Map[String, Double]): Double = {
@@ -141,7 +147,11 @@ object recommendationsRDDv2 {
     }
 
     val recommendations = getSimilarUsers(targetUser, tfidfValues)
+    val tCosineSimilarityF = System.nanoTime()
     recommendations.foreach(println)
+
+
+    val tFinalRecommendI = System.nanoTime()
 
     val titlesPlayedByTargetUserRDD = cleanMergeRDD
       .filter { case (_, _, user, _) => user == targetUser.toString }
@@ -160,12 +170,16 @@ object recommendationsRDDv2 {
       ((appId, title), user)
     }
 
-    val t1 = System.nanoTime()
+    val tFinalRecommendF = System.nanoTime()
 
     finalRecommendations.take(20).foreach(println)
-    println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
-    println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
-    println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
+
+    // Calculating execution times
+    println("\n\nExecution time(preprocessing):\t"+ (tPreProcessingF-tPreProcessingI)/1000000 + "ms\n")
+    println("\n\nExecution time(Tf-Idf calculation):\t"+ (tTFIDFF-tTFIDFI)/1000000 + "ms\n")
+    println("\n\nExecution time(Cosine similarity calculation):\t"+ (tCosineSimilarityF-tCosineSimilarityI)/1000000 + "ms\n")
+    println("\n\nExecution time(final recommendation):\t"+ (tFinalRecommendF-tFinalRecommendI)/1000000 + "ms\n")
+    println("\n\nExecution time(total):\t"+ (tFinalRecommendF-tPreProcessingI)/1000000 + "ms\n") //da sistemare
 
     spark.stop()
   }

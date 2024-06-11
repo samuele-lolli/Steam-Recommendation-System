@@ -12,16 +12,16 @@ object recommendationRDD {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
-    val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
+    val dataPathRec = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\games.csv"
 
     val tPreProcessingI = System.nanoTime()
 
-    //Load dataset as Dataframe
+    //Load dataset as dataframe
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
     val dfGames = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathGames)
 
-
+    //Converting dataframes in RDDs
     val rddRec = dfRec.rdd
     val rddGames = dfGames.rdd
 
@@ -202,19 +202,20 @@ object recommendationRDD {
     recommendations.foreach(println)
 
     /*
-(10941911,0.7293625797795579)
-(14044364,0.7263267622929318)
-(4509885,0.7186991307198306)
-(3278010,0.7159065615500113)
-(6019065,0.7126999191199811)
-(7889674,0.7113882151776377)
-(1216253,0.7088144049757779)
-(144350,0.7063527142603677)
-(6222146,0.7033717175918999)
-(10974221,0.7028838351034404)
+      (10941911,0.7293625797795579)
+      (14044364,0.7263267622929318)
+      (4509885,0.7186991307198306)
+      (3278010,0.7159065615500113)
+      (6019065,0.7126999191199811)
+      (7889674,0.7113882151776377)
+      (1216253,0.7088144049757779)
+      (144350,0.7063527142603677)
+      (6222146,0.7033717175918999)
+      (10974221,0.7028838351034404)
      */
 
     val tFinalRecommendI = System.nanoTime()
+
     // Extract games recommended by the target user
     val titlesPlayedByTargetUserRDD = cleanMergeRDD
       .filter { case (_, _, user, _) => user.equals(targetUser.toString)}
@@ -247,9 +248,9 @@ object recommendationRDD {
     println("\n\nExecution time(Tf-Idf calculation):\t"+ (tTFIDFF-tTFIDFI)/1000000 + "ms\n")
     println("\n\nExecution time(Cosine similarity calculation):\t"+ (tCosineSimilarityF-tCosineSimilarityI)/1000000 + "ms\n")
     println("\n\nExecution time(final recommendation):\t"+ (tFinalRecommendF-tFinalRecommendI)/1000000 + "ms\n")
-    println("\n\nExecution time(total):\t"+ (tFinalRecommendF-tFinalRecommendI)/1000000 + "ms\n") //da sistemare
+    println("\n\nExecution time(total):\t"+ (tFinalRecommendF-tPreProcessingI)/1000000 + "ms\n") //da sistemare
 
-
+    spark.stop()
   }
 }
 

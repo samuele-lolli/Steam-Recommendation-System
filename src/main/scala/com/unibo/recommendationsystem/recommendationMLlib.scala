@@ -18,13 +18,13 @@ object recommendationMLlib {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    //val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    //val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    val dataPathRec = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\games.csv"
 
-    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
-    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
+//    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
+//    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
 
-    val t4 = System.nanoTime()
+    val tPreProcessingI = System.nanoTime()
 
     //Load dataset as Dataframe
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
@@ -42,8 +42,6 @@ object recommendationMLlib {
     val cleanMerge = merged
       .withColumn("title", lower(trim(regexp_replace(col("title"), "\\s+", " "))))
 
-    val t5 = System.nanoTime()
-
     /* Code to split the dataset for faster run
     val splits = cleanMerge.randomSplit(Array(0.7, 0.3), seed=123L) // 70/30 split
     val trainingDF = splits(0)
@@ -52,8 +50,6 @@ object recommendationMLlib {
     testingDF.printSchema()
 
      */
-
-    val t2 = System.nanoTime()
 
     //Tokenization of titles with MLlib class
     val tokenizer = new Tokenizer()
@@ -74,6 +70,11 @@ object recommendationMLlib {
     //Filtering out all users with less than 20 words in their aggregated words list
     val filteredData = aggregateData.filter(count("words") >= 20)
 
+    val tPreProcessingF = System.nanoTime()
+
+
+    val tTFIDFI = System.nanoTime()
+
     //HashingTF converts a collection of words into a fixed-length feature vector
     val hashingTF = new HashingTF()
       .setInputCol("UDF(collect_list(words) AS words)")
@@ -87,7 +88,9 @@ object recommendationMLlib {
     val idfModel = idf.fit(featurizedData)
     val rescaledData = idfModel.transform(featurizedData)
 
-    val t3 = System.nanoTime()
+    val tTFIDFF = System.nanoTime()
+
+    val tCosineSimilarityI = System.nanoTime()
 
    // rescaledData.printSchema()
    // rescaledData.show()
@@ -115,6 +118,8 @@ object recommendationMLlib {
         val firstUserId = newDf.select("user_id").first().getAs[Int]("user_id")
         println("Target User: " + firstUserId)
      */
+
+
 
     //Select a user for the recommendation
     val targetUser = 2591067
@@ -144,11 +149,14 @@ object recommendationMLlib {
     //sersSimilar.collect().foreach(println)
     //println("Recommendations Top3")
     /*
-[6019065]
-[8605254]
-[6222146]
-Recommendations Top3
+    [6019065]
+    [8605254]
+    [6222146]
+    Recommendations Top3
      */
+    val tCosineSimilarityF = System.nanoTime()
+
+    val tFinalRecommendI = System.nanoTime()
 
     //Find games played by users similar to the target user
     val resultDF = cleanMerge.join(usersSimilar, cleanMerge("user_id") === usersSimilar("user")).drop(col("user_id"))
@@ -167,40 +175,46 @@ Recommendations Top3
       .groupBy("app_id", "title")
       .agg(collect_list("user").alias("users"))
 
+    val tFinalRecommendF = System.nanoTime()
+
     aggregatedDF.show()
 
+
     /*
-    +-------+--------------------+------------------+
-| app_id|               title|             users|
-+-------+--------------------+------------------+
-|1105670|      the last spell|         [6019065]|
-| 629760|             mordhau|         [6019065]|
-|1648470|                    |         [8605254]|
-|1500750|         tauren maze|         [8605254]|
-|1263370|        seek girlfog|[8605254, 6019065]|
-|1013130|  happy anime puzzle|         [8605254]|
-|1397350|  - long time no see|         [8605254]|
-|1148510|        pretty angel|[6019065, 6222146]|
-|1460040|        love fantasy|         [8605254]|
-|1153430|           love wish|[8605254, 6019065]|
-|1426110|love n dream virt...|         [8605254]|
-|1060670|       taboos cracks|[6222146, 6019065]|
-|1468160|        cube racer 2|         [6019065]|
-|1211360|            neomorph|[8605254, 6222146]|
-|1146630|       yokais secret|[6019065, 8605254]|
-| 355980|     dungeon warfare|         [6019065]|
-| 391220|rise of the tomb ...|         [8605254]|
-|1274610|leslove.club emil...|         [8605254]|
-|1182760|           starlight|         [8605254]|
-|1605010|      adorable witch|         [8605254]|
-+-------+--------------------+------------------+
-only showing top 20 rows
+      +-------+--------------------+------------------+
+      | app_id|               title|             users|
+      +-------+--------------------+------------------+
+      |1105670|      the last spell|         [6019065]|
+      | 629760|             mordhau|         [6019065]|
+      |1648470|                    |         [8605254]|
+      |1500750|         tauren maze|         [8605254]|
+      |1263370|        seek girlfog|[8605254, 6019065]|
+      |1013130|  happy anime puzzle|         [8605254]|
+      |1397350|  - long time no see|         [8605254]|
+      |1148510|        pretty angel|[6019065, 6222146]|
+      |1460040|        love fantasy|         [8605254]|
+      |1153430|           love wish|[8605254, 6019065]|
+      |1426110|love n dream virt...|         [8605254]|
+      |1060670|       taboos cracks|[6222146, 6019065]|
+      |1468160|        cube racer 2|         [6019065]|
+      |1211360|            neomorph|[8605254, 6222146]|
+      |1146630|       yokais secret|[6019065, 8605254]|
+      | 355980|     dungeon warfare|         [6019065]|
+      | 391220|rise of the tomb ...|         [8605254]|
+      |1274610|leslove.club emil...|         [8605254]|
+      |1182760|           starlight|         [8605254]|
+      |1605010|      adorable witch|         [8605254]|
+      +-------+--------------------+------------------+
+      only showing top 20 rows
      */
 
-    val t1 = System.nanoTime()
+    // Calculating execution times
+    println("\n\nExecution time(preprocessing):\t"+ (tPreProcessingF-tPreProcessingI)/1000000 + "ms\n")
+    println("\n\nExecution time(Tf-Idf calculation):\t"+ (tTFIDFF-tTFIDFI)/1000000 + "ms\n")
+    println("\n\nExecution time(Cosine similarity calculation):\t"+ (tCosineSimilarityF-tCosineSimilarityI)/1000000 + "ms\n")
+    println("\n\nExecution time(final recommendation):\t"+ (tFinalRecommendF-tFinalRecommendI)/1000000 + "ms\n")
+    println("\n\nExecution time(total):\t"+ (tFinalRecommendF-tPreProcessingI)/1000000 + "ms\n") //da sistemare
 
-    println("\n\nExecution time(recommendation):\t"+ (t1-t0)/1000000 + "ms\n")
-    println("\n\nExecution time(Tf-Idf calculation):\t"+ (t3-t2)/1000000 + "ms\n")
-    println("\n\nExecution time(preprocessing):\t"+ (t5-t4)/1000000 + "ms\n")
+    spark.stop()
   }
 }
