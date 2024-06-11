@@ -12,8 +12,8 @@ object recommendationRDD {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
 
     val t4 = System.nanoTime()
 
@@ -107,7 +107,7 @@ object recommendationRDD {
     val filteredDataRDD = aggregateDataRDD.filter { case (_, words) => words.length >= 20 }
 
     // Explode the data
-    val explodedRDD = aggregateDataRDD.flatMap { case (userId, words) =>
+    val explodedRDD = filteredDataRDD.flatMap { case (userId, words) =>
       words.map(word => (userId, word)) // Creates a new tuple (userId, word) for each individual word
     }
 
