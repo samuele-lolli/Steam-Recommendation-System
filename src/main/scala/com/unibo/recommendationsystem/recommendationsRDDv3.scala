@@ -2,7 +2,6 @@ package com.unibo.recommendationsystem
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.broadcast.Broadcast
 
 object recommendationsRDDv3 {
   def main(args: Array[String]): Unit = {
@@ -23,17 +22,24 @@ object recommendationsRDDv3 {
     // Select useful data from recommendations dataset
     val selectedRecRDD = dfRec.rdd.map(row => (row.getInt(0), row.getBoolean(4), row.getInt(6).toString))
 
-    // Create a map of appId to game titles and broadcast it
-    val titleDict = dfGames.rdd.map(row => (row.getInt(0), row.getString(1).toLowerCase.trim.replaceAll("\\s+", " "))).collectAsMap().toMap
-    val broadcastTitleDict: Broadcast[Map[Int, String]] = spark.sparkContext.broadcast(titleDict)
+    // Create a map of appId to game titles
+    val titleDict = dfGames.rdd.map(row => (row.getInt(0), row.getString(1).toLowerCase.trim.replaceAll("\\s+", " "))).collectAsMap()
 
     // Merge RDDs to include game titles
     val mergedRDD = selectedRecRDD.map {
-      case (appId, _, user) =>
-        (user, broadcastTitleDict.value.getOrElse(appId, "").split("\\s+"))
+      case (appId, recommended, user) =>
+        (appId, recommended, user, titleDict.getOrElse(appId, ""))
+    }
+
+    // Aggregate data by user
+    val aggregateDataRDD = mergedRDD.map {
+      case (_, _, user, title) => (user, title.split("\\s+"))
     }.groupByKey().mapValues(_.flatten.toArray).filter {
       case (_, words) => words.length >= 20
-    }.flatMap {
+    }
+
+    // Explode the aggregated data for TF-IDF calculation
+    val explodedRDD = aggregateDataRDD.flatMap {
       case (userId, words) => words.map(word => (userId, word))
     }
 
@@ -43,26 +49,24 @@ object recommendationsRDDv3 {
 
     // Calculate TF-IDF
     def calculateTFIDF(userWordsDataset: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
-      val userCount = userWordsDataset.map(_._1).distinct().count()
-
-      // Calculate IDF values
-      val idfValues = userWordsDataset.map { case (_, word) => (word, 1) }
-        .reduceByKey(_ + _)
-        .mapValues(count => math.log(userCount.toDouble / count))
-        .collectAsMap().toMap
-
-      val broadcastIdfValues: Broadcast[Map[String, Double]] = spark.sparkContext.broadcast(idfValues)
-
-      // Calculate TF-IDF values
-      userWordsDataset.groupByKey().mapValues { wordsIterable =>
-        val words = wordsIterable.toSeq
+      def calculateTF(words: Seq[String]): Map[String, Double] = {
         val totalWords = words.size.toDouble
-        val termFrequencies = words.groupBy(identity).mapValues(_.size / totalWords)
-        termFrequencies.map { case (word, tf) => (word, tf * broadcastIdfValues.value.getOrElse(word, 0.0)) }
+        words.groupBy(identity).mapValues(_.size / totalWords)
+      }
+
+      def calculateIDF(userWords: RDD[(String, String)]): Map[String, Double] = {
+        val userCount = userWords.count()
+        userWords.map { case (_, word) => (word, 1) }.reduceByKey(_ + _).mapValues(count => math.log(userCount.toDouble / count)).collect().toMap
+      }
+
+      val idfValues = calculateIDF(userWordsDataset)
+      userWordsDataset.groupByKey().mapValues { wordsIterable =>
+        val termFrequencies = calculateTF(wordsIterable.toSeq)
+        termFrequencies.map { case (word, tf) => (word, tf * idfValues.getOrElse(word, 0.0)) }
       }
     }
 
-    val tfidfValues = calculateTFIDF(mergedRDD)
+    val tfidfValues = calculateTFIDF(explodedRDD)
 
     val tTFIDFF = System.nanoTime()
 
@@ -78,7 +82,7 @@ object recommendationsRDDv3 {
 
     // Find similar users
     def getSimilarUsers(userId: Int, tfidfValues: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
-      val userGames = tfidfValues.filter(_._1 == userId.toString).first()._2
+      val userGames = tfidfValues.lookup(userId.toString).head
       tfidfValues.filter(_._1 != userId.toString).map {
         case (otherUserId, otherUserGames) => (otherUserId, computeCosineSimilarity(userGames, otherUserGames))
       }.collect().sortBy(-_._2).take(10)
@@ -93,19 +97,17 @@ object recommendationsRDDv3 {
     val tFinalRecommendI = System.nanoTime()
 
     val titlesPlayedByTargetUser = mergedRDD.filter {
-      case (user, _) => user == targetUser.toString
-    }.map(_._2).distinct().collect().toSet
+      case (_, _, user, _) => user == targetUser.toString
+    }.map(_._4).distinct().collect().toSet
 
     val userIdsToFind = recommendations.take(3).map(_._1).toSet
 
-    val finalRecommendations = selectedRecRDD.filter {
-      case (_, isRecommended, user) =>
-        userIdsToFind.contains(user) && isRecommended
+    val finalRecommendations = mergedRDD.filter {
+      case (_, isRecommended, user, title) =>
+        userIdsToFind.contains(user) && !titlesPlayedByTargetUser.contains(title) && isRecommended
     }.map {
-      case (appId, _, user) => (appId, user, broadcastTitleDict.value.getOrElse(appId, ""))
-    }.filter {
-      case (_, _, title) => !titlesPlayedByTargetUser.contains(title)
-    }.distinct()
+      case (appId, _, user, title) => ((appId, title), user)
+    }
 
     val tFinalRecommendF = System.nanoTime()
 
