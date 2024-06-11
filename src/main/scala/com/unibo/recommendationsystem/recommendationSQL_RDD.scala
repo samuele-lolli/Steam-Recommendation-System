@@ -14,8 +14,8 @@ object recommendationSQL_RDD {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    val dataPathRec = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\recommendations.csv"
-    val dataPathGames = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\games.csv"
+    val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
 
     val tPreProcessingI = System.nanoTime()
 
