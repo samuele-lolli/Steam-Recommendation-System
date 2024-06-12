@@ -154,6 +154,7 @@ object recommendationSQL_RDD {
     println("recommendedUsers Top 3")
     recommendedUsers.foreach(println)
 
+
     /*
     (10941911,0.7293625797795579)
     (14044364,0.7263267622929318)
