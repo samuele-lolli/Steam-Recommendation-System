@@ -115,9 +115,10 @@ object recommendationMLlib {
     usersSimilar.show()
 
     /*
-    [6019065]
-    [8605254]
-    [6222146]
+|10941911|
+|14044364|
+| 7889674|
+| 4509885 |
      */
 
     val tCosineSimilarityF = System.nanoTime()
@@ -143,6 +144,24 @@ object recommendationMLlib {
     val tFinalRecommendF = System.nanoTime()
 
     aggregatedDF.show()
+
+    /*
+
+    +-------+--------------------+-------------------+
+| app_id|               title|              users|
++-------+--------------------+-------------------+
+|1085660|           destiny 2|         [14044364]|
+|1060670|      taboos: cracks|          [7889674]|
+|1146630|      yokai's secret|          [7889674]|
+| 307690|sleeping dogs: de...|         [14044364]|
+|1267910|         melvor idle|         [14044364]|
+|1509090|         seek girl ⅷ|          [7889674]|
+|1126290|                lost|[7889674, 14044364]|
+|1172470|       apex legends™|         [14044364]|
+|1263370|     seek girl:fog ⅰ|          [7889674]|
+|1205240|       tentacle girl|          [7889674]|
++-------+--------------------+-------------------+
+     */
 
     // Calculating execution times
     println("\n\nExecution time(preprocessing):\t"+ (tPreProcessingF-tPreProcessingI)/1000000 + "ms\n")
