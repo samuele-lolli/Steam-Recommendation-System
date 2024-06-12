@@ -131,7 +131,6 @@ object recommendationSQL_RDD {
       dotProduct(vector1, vector2) / (magnitude(vector1) * magnitude(vector2))
     }
 
-
     val targetUser = 2591067
 
     // Get users similar to the target
@@ -146,20 +145,20 @@ object recommendationSQL_RDD {
           (otherUserId, computeCosineSimilarity(userGames, otherUserGames)) // Calculate similarity here
         }.sortBy(-_._2) // Sort by highest score
         .collect()
-        .take(15) // Take the three best matches
+        .take(3) // Take the three best matches
     }
 
     // Get recommendations for target users, based on previously calculated TF-IDF values
     val recommendedUsers = getSimilarUsers(targetUser, userSimRDD)
 
-    println("recommendedUsers Top15")
+    println("recommendedUsers Top 3")
     recommendedUsers.foreach(println)
-    //println("Recommendations Top3")
+
     /*
-      (6019065,0.7146400338963895)
-      (8605254,0.6975084350476757)
-      (6222146,0.6917861806899793)
-     */
+    (10941911,0.7293625797795579)
+    (14044364,0.7263267622929318)
+    (4509885,0.7186991307198306)
+    */
 
     val tCosineSimilarityF = System.nanoTime()
 
@@ -191,6 +190,21 @@ object recommendationSQL_RDD {
 
     finalRecommendations.show()
 
+    /*
+    +-------+--------------------+----------+
+    | app_id|               title|     users|
+    +-------+--------------------+----------+
+    |1085660|           destiny 2|[14044364]|
+    |1172470|       apex legends™|[14044364]|
+      | 307690|sleeping dogs: de...|[14044364]|
+      |1267910|         melvor idle|[14044364]|
+      |1227890|     summer memories| [4509885]|
+      |1126290|                lost|[14044364]|
+    |1153430|           love wish| [4509885]|
+      |1109460|there is no greendam| [4509885]|
+      |1146630|      yokai's secret| [4509885]|
+      +-------+--------------------+----------+
+  */
     // Calculating execution times
     println("\n\nExecution time(preprocessing):\t"+ (tPreProcessingF-tPreProcessingI)/1000000 + "ms\n")
     println("\n\nExecution time(Tf-Idf calculation):\t"+ (tTFIDFF-tTFIDFI)/1000000 + "ms\n")

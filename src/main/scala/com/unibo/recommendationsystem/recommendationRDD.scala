@@ -128,6 +128,16 @@ object recommendationRDD {
     val recommendations = getSimilarUsers(targetUser, tfidfValues)
 
     recommendations.foreach(println)
+    /*(10941911,0.7293625797795579)
+    (14044364,0.7263267622929318)
+    (4509885,0.7186991307198306)
+    (3278010,0.7159065615500113)
+    (6019065,0.7126999191199811)
+    (7889674,0.7113882151776377)
+    (1216253,0.7088144049757779)
+    (144350,0.7063527142603677)
+    (6222146,0.7033717175918999)
+    (10974221,0.7028838351034404)*/
 
     val tCosineSimilarityF = System.nanoTime()
 
@@ -150,6 +160,18 @@ object recommendationRDD {
     val tFinalRecommendF = System.nanoTime()
 
     finalRecommendations.take(30).foreach(println)
+
+    /*
+    ((1085660,destiny 2),14044364)
+    ((1172470,apex legends™),14044364)
+    ((307690,sleeping dogs: definitive edition),14044364)
+    ((1267910,melvor idle),14044364)
+    ((1227890,summer memories),4509885)
+    ((1153430,love wish),4509885)
+    ((1109460,there is no greendam),4509885)
+    ((1126290,lost),14044364)
+    ((1146630,yokai's secret),4509885)
+     */
 
     println(s"\n\nExecution time(preprocessing): ${(tPreProcessingF - tPreProcessingI) / 1000000}ms\n")
     println(s"\n\nExecution time(Tf-Idf calculation): ${(tTFIDFF - tTFIDFI) / 1000000}ms\n")

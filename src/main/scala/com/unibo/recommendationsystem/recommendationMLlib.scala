@@ -17,8 +17,8 @@ object recommendationMLlib {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
 
     val tPreProcessingI = System.nanoTime()
 
@@ -110,7 +110,7 @@ object recommendationMLlib {
     val drop = filtered.drop("dense_features", "dense_frd", "hashedFeatures")
 
     //Find the three users most similar to the target user
-    val usersSimilar = drop.limit(15).select(col("user_id").alias("user"))
+    val usersSimilar = drop.limit(3).select(col("user_id").alias("user"))
     println("Top 15 similar user")
     usersSimilar.show()
 
