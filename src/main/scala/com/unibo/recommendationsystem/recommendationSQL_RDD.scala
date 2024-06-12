@@ -103,7 +103,6 @@ object recommendationSQL_RDD {
 
     val tTFIDFF = System.nanoTime()
 
-
     val tCosineSimilarityI = System.nanoTime()
 
     //Convert in a RDD[(Int, Map[String, Double])]
@@ -135,17 +134,10 @@ object recommendationSQL_RDD {
 
     // Get users similar to the target
     def getSimilarUsers(userId: Int, tfidfValues: RDD[(Int, Map[String, Double])]): Array[(Int, Double)] = {
-
-      val userGames = tfidfValues.filter(_._1 == userId).first()._2
-
-      // Exclude the target user from recommendations
-      tfidfValues.filter(_._1 != userId) // Exclude the target user
-        .map { case (otherUserId, otherUserGames) =>
-          // Calculate similarity to given user
-          (otherUserId, computeCosineSimilarity(userGames, otherUserGames)) // Calculate similarity here
-        }.sortBy(-_._2) // Sort by highest score
-        .collect()
-        .take(3) // Take the three best matches
+      val userGames = tfidfValues.lookup(userId).head
+      tfidfValues.filter(_._1 != userId).map {
+        case (otherUserId, otherUserGames) => (otherUserId, computeCosineSimilarity(userGames, otherUserGames))
+      }.collect().sortBy(-_._2).take(3)
     }
 
     // Get recommendations for target users, based on previously calculated TF-IDF values
@@ -153,7 +145,6 @@ object recommendationSQL_RDD {
 
     println("recommendedUsers Top 3")
     recommendedUsers.foreach(println)
-
 
     /*
     (10941911,0.7293625797795579)
@@ -189,7 +180,7 @@ object recommendationSQL_RDD {
 
     val tFinalRecommendF = System.nanoTime()
 
-    finalRecommendations.show()
+    finalRecommendations.take(100).foreach(println)
 
     /*
     +-------+--------------------+----------+

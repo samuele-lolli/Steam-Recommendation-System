@@ -63,10 +63,8 @@ object recommendationRDD {
       def calculateIDF(userWords: RDD[(String, String)]): Map[String, Double] = {
         val userCount = userWords.count()
         val wordsCount = userWords
-          .flatMap { case (user, words) =>
-            words.split(",").distinct.map(word => (user, word)) // Include docId and make words distinct
-          }
-          .map { case (user, word) => (word, user) } // Swap for grouping by word
+          .flatMap { case (user, words) => words.split(",").distinct.map(word => (user, word))}
+          .map { case (user, word) => (word, user) }
           .groupByKey()
           .mapValues(_.toSet.size)
 
@@ -159,7 +157,7 @@ object recommendationRDD {
 
     val tFinalRecommendF = System.nanoTime()
 
-    finalRecommendations.take(30).foreach(println)
+    finalRecommendations.take(100).foreach(println)
 
     /*
     ((1085660,destiny 2),14044364)
