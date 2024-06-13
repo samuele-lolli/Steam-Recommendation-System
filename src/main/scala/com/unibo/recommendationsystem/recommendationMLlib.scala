@@ -1,6 +1,6 @@
 package com.unibo.recommendationsystem
 import org.apache.spark.ml.feature.{HashingTF, IDF, Tokenizer}
-import org.apache.spark.ml.linalg.Vector
+import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
@@ -70,80 +70,60 @@ object recommendationMLlib {
 
     val tCosineSimilarityI = System.nanoTime()
 
-    //This udf take a spark Ml Vector as input and convert it as a dense vector
-    //Think of this like filling in any zero values with explicit zeros to form a dense array representation
-    val asDense = udf((v: Vector) => v.toDense)
+    import spark.implicits._
+    // Extract dense features for cosine similarity
+    val denseVector = udf { (v: Vector) => Vectors.dense(v.toArray) }
+    val dfWithDenseFeatures = rescaledData.withColumn("dense_features", denseVector(col("features")))
+    // Select target user
+    val targetUser = 2591067
+    val targetUserFeatures = dfWithDenseFeatures.filter($"user_id" === targetUser).select("user_id", "dense_features").first().getAs[Vector]("dense_features")
 
-    val newDf = rescaledData
-      .withColumn("dense_features", asDense(col("features")))
-
-    //udf for calculate cosine similarity between targetUserVector and otherUserVector
-    val cosSimilarity = udf { (x: Vector, y: Vector) =>
-      val v1 = x.toArray
-      val v2 = y.toArray
-      val l1 = scala.math.sqrt(v1.map(x => x*x).sum) //Magnitude
-      val l2 = scala.math.sqrt(v2.map(x => x*x).sum) //Magnitude
-      val scalar = v1.zip(v2).map(p => p._1*p._2).sum //Dot Product
-      scalar/(l1*l2)
+    // Compute cosine similarity
+    val cosSimilarity = udf { (denseFeatures: Vector) =>
+      val dotProduct = targetUserFeatures.dot(denseFeatures)
+      val normA = Vectors.norm(targetUserFeatures, 2.0)
+      val normB = Vectors.norm(denseFeatures, 2.0)
+      dotProduct / (normA * normB)
     }
 
+    // Compute cosine similarity for all users
+    val usersSimilarity = dfWithDenseFeatures
+      .filter($"user_id" =!= targetUser)
+      .withColumn("cosine_sim", cosSimilarity(col("dense_features")))
+      .select("user_id", "cosine_sim")
+      .orderBy($"cosine_sim".desc)
+      .limit(3)
 
-    //Select a user for the recommendation
-    val targetUser = 2591067
-
-    val id_list = Seq(targetUser)
-
-    //Select target user features
-    val filtered_df = newDf
-      .filter(col("user_id").isin(id_list: _*))
-      .select(col("user_id").as("id_frd"), col("dense_features").as("dense_frd"))//select
-
-    val joinedDf = newDf.join(broadcast(filtered_df), //Create a broadcasted version of filtered_df. Broadcasting is a Spark optimization technique for handling joins with DataFrames of very different sizes
-        col("user_id") =!= col("id_frd"))//To not compare targetUser with himself
-      .withColumn("cosine_sim", cosSimilarity(col("dense_frd"), col("dense_features")))//add new column with the cosine similarity score
-
-    val filtered = joinedDf
-      .withColumn("cosine_sim", when(col("cosine_sim").isNaN, 0).otherwise(col("cosine_sim"))) //Replace Nan values with 0
-      .orderBy(col("cosine_sim").desc) //sorting in descending order based on the "cosine_sim" column
-
-    //Drop useless column
-    val drop = filtered.drop("dense_features", "dense_frd", "hashedFeatures")
-
-    //Find the three users most similar to the target user
-    val usersSimilar = drop.limit(3).select(col("user_id").alias("user"))
-    println("Top 15 similar user")
-    usersSimilar.show()
-
-    /*
-|10941911|
-|14044364|
-| 7889674|
-| 4509885 |
-     */
+    // Show top 3 similar users
+    println("Top 3 similar users:")
+    usersSimilarity.show()
 
     val tCosineSimilarityF = System.nanoTime()
 
     val tFinalRecommendI = System.nanoTime()
 
-    //Find games played by users similar to the target user
-    val resultDF = cleanMerge.join(usersSimilar, cleanMerge("user_id") === usersSimilar("user")).drop(col("user_id"))
+    // Extract games recommended by the target user
+    val titlesPlayedByTargetUser = cleanMerge
+      .filter(col("user_id") === targetUser)
+      .select("title")
+      .distinct()
+      .as[String]
+      .collect()
 
-    //Extract games recommended by the target user
-    val userDF = cleanMerge.filter(cleanMerge("user_id").alias("target_user") === targetUser).toDF()
+    // Extract relevant user IDs from recommendations
+    val userIdsToFind = usersSimilarity.select("user_id").as[Int].collect.toSet
 
-    val excludedGamesDF = resultDF.join(userDF, Seq("app_id"), "leftanti") //Finds all rows from resultDF (games played by similar users).
-      //Excludes any rows from resultDF where the app_id appears in userDF (games already played by the target user).
-      .select("app_id","title","user", "is_recommended")
-
-    //Exclude games not recommended by the similar users ang group recommended app_id
-    val aggregatedDF = excludedGamesDF
-      .where(col("is_recommended") === true)
+    // Filter datasetDF to remove already played games
+    val finalRecommendations = cleanMerge
+      .filter(col("user_id").isin(userIdsToFind.toArray: _*) &&
+        !col("title").isin(titlesPlayedByTargetUser: _*) &&
+        col("is_recommended") === true)
       .groupBy("app_id", "title")
-      .agg(collect_list("user").alias("users"))
+      .agg(collect_list("user_id").alias("users"))
 
     val tFinalRecommendF = System.nanoTime()
 
-    aggregatedDF.show()
+    finalRecommendations.take(100).foreach(println)
 
     /*
 

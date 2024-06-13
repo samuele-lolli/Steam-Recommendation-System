@@ -2,7 +2,7 @@ package com.unibo.recommendationsystem
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, collect_list, concat_ws, count, countDistinct, explode, flatten, lower, map_from_arrays, regexp_replace, size, split, trim}
+import org.apache.spark.sql.functions._
 
 object recommendationSQL_RDD {
   def main(args: Array[String]): Unit = {
@@ -14,8 +14,8 @@ object recommendationSQL_RDD {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    val dataPathRec = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\recommendations.csv"
-    val dataPathGames = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\games.csv"
+    val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
 
     val tPreProcessingI = System.nanoTime()
 
