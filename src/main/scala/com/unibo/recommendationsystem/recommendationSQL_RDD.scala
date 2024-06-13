@@ -2,8 +2,7 @@ package com.unibo.recommendationsystem
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions.{col, collect_list, concat_ws, count, countDistinct, explode, lower, map_from_arrays, regexp_replace, size, split, trim, udf}
+import org.apache.spark.sql.functions.{col, collect_list, concat_ws, count, countDistinct, explode, flatten, lower, map_from_arrays, regexp_replace, size, split, trim}
 
 object recommendationSQL_RDD {
   def main(args: Array[String]): Unit = {
@@ -15,8 +14,8 @@ object recommendationSQL_RDD {
       .config("spark.master", "local[*]")
       .getOrCreate()
 
-    val dataPathRec = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\recommendations.csv"
-    val dataPathGames = "C:\\Users\\samue\\recommendationsystem\\steam-dataset\\games.csv"
+    val dataPathRec = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\gbeks\\IdeaProjects\\recommendationsystem\\steam-datasets\\games.csv"
 
     val tPreProcessingI = System.nanoTime()
 
@@ -24,30 +23,22 @@ object recommendationSQL_RDD {
     val dfRec = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathRec)
     val dfGames = spark.read.format("csv").option("header", "true").option("inferSchema", "true").load(dataPathGames)
 
-    // Select useful columns
-    val selectedRec = dfRec.select("app_id", "user_id", "is_recommended")
-    val selectedGames = dfGames.select("app_id", "title")
+    // Clean the dataset from useless whitespace and select useful columns
+    val cleanMerge = dfRec.select("app_id", "user_id", "is_recommended")
+      .join(dfGames.select("app_id", "title"), Seq("app_id"))
+      .withColumn("title", lower(trim(regexp_replace(col("title"), "\\s+", " "))))
+      .cache()
 
-    // Merge the DataFrame for app_id
-    val merged = selectedRec.join(selectedGames, Seq("app_id"), "inner")
-
-    // Clean the dataset from useless whitespace
-    val cleanMerge = merged.withColumn("title", lower(trim(regexp_replace(col("title"), "\\s+", " "))))
-
-    // Tokenization of titles on whitespaces
-    val dataset = cleanMerge.withColumn("words", split(col("title"), "\\s+"))
-
-    // Converts nested sequences into a single list of strings, combining all inner lists
-    val flattenWords: UserDefinedFunction = udf((s: Seq[Seq[String]]) => s.flatten)
-
-    // Aggregate tokenized data by user ID
-    val aggregateData = dataset.groupBy("user_id").agg(flattenWords(collect_list("words")).as("words"))
-
-    // Filtering out all users with less than 20 words in their aggregated words list
-    val filteredData = aggregateData.filter(size(col("words")) >= 20)
+    // Tokenization of titles on whitespaces and aggregation by user ID
+    val filteredData = cleanMerge
+      .withColumn("words", split(col("title"), "\\s+"))
+      .groupBy("user_id")
+      .agg(flatten(collect_list("words")).as("words"))
+      .filter(size(col("words")) >= 20)
+      .cache()
 
     // Explode the aggregated data for TF-IDF calculation
-    val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
+    val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word").cache()
 
     val tPreProcessingF = System.nanoTime()
 
@@ -56,26 +47,21 @@ object recommendationSQL_RDD {
     // Calculate the total number of words associated with each unique user in the dataset
     val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
 
-    //Calculate the Term Frequency (TF) for each word and user combination
+    // Calculate the Term Frequency (TF) for each word and user combination
     val tf = explodedDF.groupBy("user_id", "word")
-      .count()
-      .withColumnRenamed("count", "term_count") // Rename to avoid ambiguity
+      .agg(count("*").alias("term_count"))
       .join(wordsPerUser, "user_id")
       .withColumn("term_frequency", col("term_count") / col("total_words"))
 
-    //Calculate Document Frequency
+    // Calculate Document Frequency
     val dfDF = explodedDF.groupBy("word")
       .agg(countDistinct("user_id").alias("document_frequency"))
 
-    //Counting the total number of users.
-    val totalDocs = filteredData.select(count("user_id")).first()
-    //213364
+    // Counting the total number of users.
+    val totalDocs = filteredData.count()
 
-    val rdd = dfDF.rdd
-
-    //Calculate the IDF for each word in your RDD
-    //IDF helps down-weight common words and emphasize terms that are more informative and discriminative
-    val idfRDD = rdd.map { row =>
+    // Calculate the IDF for each word in your RDD
+    val idfRDD = dfDF.rdd.map { row =>
       val word = row.getString(0) // Assuming word is at index 0
       val docFreq = row.getLong(1) // Assuming document_frequency is at index 1
       val idf = math.log(totalDocs.toDouble / docFreq)
@@ -84,22 +70,15 @@ object recommendationSQL_RDD {
 
     import spark.implicits._ // For toDF() method
 
-    val idfDF = idfRDD.toDF("word", "idf")
-
     // Join the DataFrames on the 'word' column
-    val tfidfDF = tf.join(idfDF, "word")
+    val tfidfDF = tf.join(idfRDD.toDF("word", "idf"), "word")
       .withColumn("tf_idf", col("term_frequency") * col("idf"))
       .select("user_id", "word", "tf_idf")
 
-    val aggregatedXUser = tfidfDF.groupBy("user_id")
-      .agg(concat_ws(",", collect_list("word")).alias("words"),
-        concat_ws(",", collect_list(col("tf_idf").cast("string"))).alias("tf_idf_values"))
-
-    val preprocessedDF = aggregatedXUser
-      .withColumn("word_array", split(col("words"), ","))
-      .withColumn("tfidf_array", split(col("tf_idf_values"), ","))
-      .withColumn("tfidf_array", col("tfidf_array").cast("array<double>")) // Cast to double array
-      .withColumn("word_tfidf_map", map_from_arrays(col("word_array"), col("tfidf_array")))
+    val preprocessedDF = tfidfDF
+      .groupBy("user_id")
+      .agg(collect_list("word").alias("words"), collect_list("tf_idf").alias("tf_idf_values"))
+      .withColumn("word_tfidf_map", map_from_arrays(col("words"), col("tf_idf_values")))
 
     val tTFIDFF = System.nanoTime()
 
@@ -160,21 +139,18 @@ object recommendationSQL_RDD {
     val titlesPlayedByTargetUser = cleanMerge
       .filter(col("user_id") === targetUser)
       .select("title")
-      .distinct() // In case the target user has duplicates
-      .as[String] // Convert DataFrame to Dataset[String]
+      .distinct()
+      .as[String]
       .collect()
 
     // Extract relevant user IDs from recommendations
     val userIdsToFind = recommendedUsers.map(_._1).toSet
 
     // Filter datasetDF to remove already played games
-    val filteredDF = cleanMerge.filter(
-      col("user_id").isin(userIdsToFind.toSeq: _*) && // User ID is recommended
+    val finalRecommendations = cleanMerge
+      .filter(col("user_id").isin(userIdsToFind.toSeq: _*) &&
         !col("title").isin(titlesPlayedByTargetUser: _*) &&
-        col("is_recommended") === true
-    )
-
-    val finalRecommendations = filteredDF.toDF().drop(col("is_recommended"))
+        col("is_recommended") === true)
       .groupBy("app_id", "title")
       .agg(collect_list("user_id").alias("users"))
 
