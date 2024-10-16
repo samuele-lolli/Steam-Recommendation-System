@@ -211,6 +211,10 @@ object tagsRecommendationRDD {
     // Similarities outputs
     System.out.println("userSimilarities")
     val sortedSimilarities = userSimilarities.sortBy(_._2, ascending = false)
+
+    println(s"Top 10 most similar users")
+    sortedSimilarities.take(10).foreach(println)
+
     /*
       sortedSimilarities.take(10).foreach(println)
       (194719,0.8257644596959894)
@@ -513,10 +517,10 @@ object tagsRecommendationRDD {
 
     // Calculate and display execution times
     println(s"\n\nExecution time (preprocessing): ${(tPreProcessingF - tPreProcessingI) / 1000000} ms")
-    println(s"\n\nExecution time (Tf-Idf calculation): ${(tTFIDFF - tTFIDFI) / 1000000} ms")
-    println(s"\n\nExecution time (cosine similarity calculation): ${(tCosineSimilarityF - tCosineSimilarityI) / 1000000} ms")
-    println(s"\n\nExecution time (final recommendation): ${(tFinalRecommendF - tFinalRecommendI) / 1000000} ms")
-    println(s"\n\nExecution time (total): ${(tFinalRecommendF - tPreProcessingI) / 1000000} ms")
+    println(s"Execution time (Tf-Idf calculation): ${(tTFIDFF - tTFIDFI) / 1000000} ms")
+    println(s"Execution time (cosine similarity calculation): ${(tCosineSimilarityF - tCosineSimilarityI) / 1000000} ms")
+    println(s"Execution time (final recommendation): ${(tFinalRecommendF - tFinalRecommendI) / 1000000} ms")
+    println(s"Execution time (total): ${(tFinalRecommendF - tPreProcessingI) / 1000000} ms")
 
     spark.stop()
 
