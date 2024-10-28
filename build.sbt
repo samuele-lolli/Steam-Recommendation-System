@@ -14,7 +14,7 @@ lazy val root = (project in file("."))
       case PathList("META-INF", _*) => MergeStrategy.discard
       case x => MergeStrategy.first
     },
-    assembly / assemblyJarName := "recommendationMLlib.jar"
+    assembly / assemblyJarName := "recommendationSystem.jar"
   )
 
 
