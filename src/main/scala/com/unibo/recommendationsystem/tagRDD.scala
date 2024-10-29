@@ -34,9 +34,9 @@ object tagRDD {
       .getOrCreate()
 
 
-    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
-    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
-    val metadataPath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games_metadata.json"
+    val dataPathRec = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\games.csv"
+    val metadataPath = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\games_metadata.json"
 
     val recSchema = StructType(Array(
       StructField("app_id", IntegerType, nullable = false), // ID del gioco
@@ -112,7 +112,7 @@ object tagRDD {
 
 
     // Step 4: Aggregate data by user using a higher-order function to pass a filtering condition
-    def aggregateByUser[T](rdd: RDD[(String, Array[String])], filterFunc: Array[String] => Boolean): RDD[(String, Array[String])] = {
+    def aggregateByUser(rdd: RDD[(String, Array[String])], filterFunc: Array[String] => Boolean): RDD[(String, Array[String])] = {
       rdd.filter { case (_, words) => filterFunc(words) }
     }
 
@@ -137,9 +137,9 @@ object tagRDD {
     val tTFIDFI = System.nanoTime()
 
     // Step 6: TF-IDF function definition using higher-order functions
-    def calculateTFIDF[T](userWordsDataset: RDD[(String, String)],
-                          tfFunc: String => Map[String, Double],
-                          idfFunc: RDD[(String, String)] => Map[String, Double]): RDD[(String, Map[String, Double])] = {
+    def calculateTFIDF(userWordsDataset: RDD[(String, String)],
+                       tfFunc: String => Map[String, Double],
+                       idfFunc: RDD[(String, String)] => Map[String, Double]): RDD[(String, Map[String, Double])] = {
 
       // Group words by user
       val groupedUserWords = userWordsDataset

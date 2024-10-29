@@ -17,9 +17,9 @@ object tagSQL {
       .getOrCreate()
 
 
-    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
-    val metadataPath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games_metadata.json"
+    val dataPathRec = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\recommendations.csv"
+    val dataPathGames = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\games.csv"
+    val metadataPath = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\games_metadata.json"
 
     val recSchema = StructType(Array(
       StructField("app_id", IntegerType, nullable = false), // ID del gioco
