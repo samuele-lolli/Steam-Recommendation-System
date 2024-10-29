@@ -2,9 +2,10 @@ package com.unibo.recommendationsystem
 
 
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{Encoder, SparkSession, Row}
-import org.apache.spark.sql.types.{ArrayType, BooleanType, DoubleType, IntegerType, StringType, StructField, StructType}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{Encoder, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
+
 import scala.collection.Map
 
 object tagSQL {
