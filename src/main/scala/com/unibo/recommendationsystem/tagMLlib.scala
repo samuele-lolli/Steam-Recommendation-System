@@ -127,10 +127,11 @@ object tagMLlib {
       dotProduct / (normA * normB)
     }
 
-    // Estrazione delle feature dell'utente target e calcolo similarità coseno rispetto agli altri utenti
+    // Estrazione delle feature dell'utente target
     val targetUserFeatures = dfWithDenseFeatures.filter($"user_id" === targetUser)
       .select("features").first().getAs[Vector]("features")
 
+    // Calcolo similarità coseno rispetto agli altri utenti
     val usersSimilarity = dfWithDenseFeatures
       .filter($"user_id" =!= targetUser)
       .withColumn("cosine_sim", cosineSimilarity(targetUserFeatures)(col("features")))
@@ -170,7 +171,7 @@ object tagMLlib {
     println(s"Execution time (TF-IDF): ${(tTFIDFF - tTFIDFI) / 1e9d} seconds")
     println(s"Execution time (cosine similarity): ${(tCosineSimilarityF - tCosineSimilarityI) / 1e9d} seconds")
     println(s"Execution time (final recommendation): ${(tFinalRecommendF - tFinalRecommendI) / 1e9d} seconds")
-
+    println(s"\n\nExecution time(total): ${(tFinalRecommendF - tPreProcessingI) / 1e9d}ms\n")
     /*
     [310950,Street Fighter V,WrappedArray(7002264, 65064)]
     [1901340,Ero Manager,WrappedArray(65064)]
