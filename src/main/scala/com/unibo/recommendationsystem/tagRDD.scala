@@ -163,9 +163,6 @@ object tagRDD {
 
     val tfidfValues = calculateTFIDF(explodedRDD, calculateTF, calculateIDF)
 
-    //tfidfValues.take(5).foreach(println) //51 secondi
-
-
     val tTFIDFF = System.nanoTime()
 
     val tCosineSimilarityI = System.nanoTime()
@@ -230,7 +227,7 @@ object tagRDD {
     val cosineSimilarity = (v1: Map[String, Double], v2: Map[String, Double]) =>
       computeCosineSimilarity(v1, v2, dotProduct, magnitude)
 
-    val targetUser = 2591067
+    val targetUser = 4893896
     val recommendations = getSimilarUsers(targetUser, tfidfValues, cosineSimilarity)
 
     val tCosineSimilarityF = System.nanoTime()
@@ -266,6 +263,10 @@ object tagRDD {
     }
 
     val userIdsToFind = recommendations.take(3).map(_._1).toSet
+
+    println("Top 3 similar users")
+    userIdsToFind.foreach(println)
+
     val finalRecommendations = filterAndMap(mergedRDD,
       { case (_, tag, user) => userIdsToFind.contains(user) && !titlesPlayedByTargetUser.contains(tag)},
       { case (appId, tag, user) => (appId, tag, user) })
@@ -288,10 +289,9 @@ object tagRDD {
         (appId, title, userIds)  // Return as (appId, title, comma-separated userIds)
       }
 
-
-
-
-    groupedRecommendations.take(100).foreach(println)
+    groupedRecommendations.collect().foreach { case (_, title, userIds) =>
+      println(s"userId: $userIds, title: $title")
+    }
 
     val tFinalRecommendF = System.nanoTime()
 

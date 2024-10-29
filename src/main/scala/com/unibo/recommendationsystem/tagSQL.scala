@@ -13,43 +13,14 @@ object tagSQL {
     // Initialize SparkSession
     val spark = SparkSession.builder
       .appName("recommendationsystem")
-      // Executor Memory and Cores: Balanced to fit 2 executors per worker node
-      .config("spark.executor.memory", "40g")          // Allocate about 80% memory for each executor
-      .config("spark.executor.cores", "4")             // 4 cores per executor
-      .config("spark.executor.instances", "4")         // Static executors for 2 primary workers (2 per worker)
-
-      // Dynamic Allocation for Scaling with Spot Node
-      .config("spark.dynamicAllocation.enabled", "true")
-      .config("spark.dynamicAllocation.minExecutors", "4")   // Minimum executors: for 2 primary workers
-      .config("spark.dynamicAllocation.maxExecutors", "5")   // Max executors: to include the preemptible node
-      .config("spark.dynamicAllocation.executorIdleTimeout", "60s")
-
-      // Speculative Execution to handle stragglers
-      .config("spark.speculation", "true")
-      .config("spark.speculation.interval", "100ms")
-      .config("spark.speculation.multiplier", "1.5")
-
-      // Shuffle and Serialization Optimizations
-      .config("spark.sql.shuffle.partitions", "96")  // (4 cores * 4 executors * 6) for balanced parallelism
-      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .config("spark.rdd.compress", "true")
-      .config("spark.shuffle.file.buffer", "1m")     // Larger buffer for shuffling to avoid frequent disk I/O
-
-      // Memory Management Adjustments
-      .config("spark.memory.fraction", "0.7")        // Increase execution memory for large operations
-      .config("spark.memory.storageFraction", "0.3") // Leave less for storage due to MEMORY_AND_DISK persistence
-
-      // Adaptive Query Execution for optimized shuffling and partitioning
-      .config("spark.sql.adaptive.enabled", "true")
-      .config("spark.sql.adaptive.coalescePartitions.enabled", "true") // Combine small partitions to reduce overhead
-
+      .config("spark.master", "local[*]")
       .getOrCreate()
 
 
 
-    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
-    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
-    val metadataPath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games_metadata.json"
+    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
+    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    val metadataPath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games_metadata.json"
 
     val recSchema = StructType(Array(
       StructField("app_id", IntegerType, nullable = false), // ID del gioco
@@ -149,7 +120,7 @@ object tagSQL {
 
     val tTFIDFF = System.nanoTime()
 
-    val targetUser = 2591067
+    val targetUser = 4893896
 
     val tCosineSimilarityI = System.nanoTime()
 
@@ -206,7 +177,7 @@ object tagSQL {
     top3Users.show()
 
     /*
-    13498880,65064,7002264
+    [11277999,8971360,9911449]
      */
 
     val tCosineSimilarityF = System.nanoTime()
@@ -237,7 +208,7 @@ object tagSQL {
       .agg(collect_list("user_id").alias("user_ids")) // Aggregate user_ids for each title
       .select("title", "user_ids") // Select only the title and aggregated user_ids
 
-    groupedRecommendations.show(false) // Display the result without truncating
+    groupedRecommendations.show(groupedRecommendations.count.toInt, truncate = false)
 
     val tFinalRecommendF = System.nanoTime()
 
@@ -251,47 +222,145 @@ object tagSQL {
 
     //LOCALE
     /*
-    +--------------------+-------+
-|               title|user_id|
-+--------------------+-------+
-|         Garry's Mod|7002264|
-|DRAGON BALL Z: KA...|7002264|
-|Total War: WARHAMMER|7002264|
-|Halo: The Master ...|7002264|
-|           Evil West|7002264|
-|                GTFO|7002264|
-|  Grand Theft Auto V|7002264|
-|         War Thunder|7002264|
-|Red Dead Redempti...|7002264|
-|    Wallpaper Engine|7002264|
-|Sea of Thieves 20...|7002264|
-|      Cyberpunk 2077|7002264|
-|          Green Hell|7002264|
-|Age of Empires IV...|7002264|
-|               Hades|7002264|
-|          Subnautica|7002264|
-|       Apex Legends™|7002264|
-|       Call of Duty®|7002264|
-|Warhammer: Vermin...|7002264|
-|STAR WARS™: The O...|7002264|
-+--------------------+-------+
-only showing top 20 rows
++---------------------------------------------------------------------------------+------------------+
+|title                                                                            |user_ids          |
++---------------------------------------------------------------------------------+------------------+
+|Wallpaper Engine                                                                 |[8971360]         |
+|Valiant Hearts: The Great War™ / Soldats Inconnus : Mémoires de la Grande Guerre™|[9911449]         |
+|The Operational Art of War IV                                                    |[9911449]         |
+|Mafia III: Definitive Edition                                                    |[9911449]         |
+|Toy Soldiers                                                                     |[9911449]         |
+|Lock 'n Load Tactical Digital: Core Game                                         |[9911449]         |
+|rFactor 2                                                                        |[9911449]         |
+|Far Cry® 5                                                                       |[9911449]         |
+|DCS World Steam Edition                                                          |[9911449]         |
+|Moonbase Alpha                                                                   |[9911449]         |
+|Battle Academy                                                                   |[9911449]         |
+|Making History: The Calm & the Storm                                             |[9911449]         |
+|Super Meat Boy                                                                   |[9911449]         |
+|Jagged Alliance - Back in Action                                                 |[9911449]         |
+|Company of Heroes: Tales of Valor                                                |[9911449]         |
+|Plants vs. Zombies GOTY Edition                                                  |[9911449]         |
+|Alice: Madness Returns                                                           |[9911449]         |
+|Jagged Alliance Flashback                                                        |[9911449]         |
+|Kane and Lynch: Dead Men™                                                        |[9911449]         |
+|FEZ                                                                              |[9911449]         |
+|Thirty Flights of Loving                                                         |[9911449]         |
+|Portal 2                                                                         |[9911449]         |
+|Total War: ROME II - Emperor Edition                                             |[9911449]         |
+|RaceRoom Racing Experience                                                       |[9911449]         |
+|American Truck Simulator                                                         |[11277999]        |
+|Command: Modern Operations                                                       |[9911449]         |
+|Just Cause 2: Multiplayer Mod                                                    |[11277999]        |
+|Assetto Corsa Competizione                                                       |[9911449]         |
+|GASP                                                                             |[9911449]         |
+|The Few                                                                          |[9911449]         |
+|Jagged Alliance 2 - Wildfire                                                     |[9911449]         |
+|Flight Control HD                                                                |[9911449]         |
+|Sailaway - The Sailing Simulator                                                 |[9911449]         |
+|Battlezone 98 Redux                                                              |[9911449]         |
+|Swords and Soldiers HD                                                           |[9911449]         |
+|Knights of Honor                                                                 |[9911449]         |
+|Deadlight                                                                        |[9911449]         |
+|Arma 3                                                                           |[9911449]         |
+|Baldur's Gate: Enhanced Edition                                                  |[9911449]         |
+|Company of Heroes                                                                |[11277999]        |
+|Grand Theft Auto V                                                               |[9911449]         |
+|Close Combat - Gateway to Caen                                                   |[9911449]         |
+|Total War: SHOGUN 2                                                              |[8971360]         |
+|Zeno Clash                                                                       |[9911449]         |
+|Lead and Gold: Gangs of the Wild West                                            |[9911449]         |
+|Carrier Deck                                                                     |[9911449]         |
+|ENDLESS™ Space - Definitive Edition                                              |[9911449]         |
+|The Walking Dead                                                                 |[9911449]         |
+|Chivalry: Medieval Warfare                                                       |[9911449]         |
+|Dungeon Siege III                                                                |[9911449]         |
+|Mount & Blade: With Fire & Sword                                                 |[9911449]         |
+|Guacamelee! Gold Edition                                                         |[9911449]         |
+|Assetto Corsa                                                                    |[9911449]         |
+|Dragon's Dogma: Dark Arisen                                                      |[9911449]         |
+|Flashpoint Campaigns: Red Storm Player's Edition                                 |[9911449]         |
+|Gunpoint                                                                         |[9911449]         |
+|Call of Duty®: Modern Warfare® 2 (2009)                                          |[9911449]         |
+|Train Simulator Classic                                                          |[9911449]         |
+|Darkest Dungeon®                                                                 |[9911449]         |
+|Unity of Command: Stalingrad Campaign                                            |[9911449]         |
+|Planet Coaster                                                                   |[9911449]         |
+|Day of Defeat: Source                                                            |[9911449]         |
+|IL-2 Sturmovik: 1946                                                             |[9911449]         |
+|romantic player                                                                  |[9911449]         |
+|Motorsport Manager                                                               |[9911449]         |
+|Pride of Nations                                                                 |[9911449]         |
+|Worms Reloaded                                                                   |[9911449]         |
+|F.E.A.R.                                                                         |[9911449]         |
+|Hitman 2: Silent Assassin                                                        |[9911449]         |
+|Wings of Prey                                                                    |[9911449]         |
+|Military Life: Tank Simulator                                                    |[9911449]         |
+|Ultimate General: Gettysburg                                                     |[9911449]         |
+|Sébastien Loeb Rally EVO                                                         |[9911449]         |
+|Crusader Kings II                                                                |[9911449]         |
+|No Man's Sky                                                                     |[9911449]         |
+|X-Plane 11                                                                       |[9911449]         |
+|Red Orchestra 2: Heroes of Stalingrad with Rising Storm                          |[9911449, 8971360]|
+|Europa Universalis IV                                                            |[9911449]         |
+|IL-2 Sturmovik: Cliffs of Dover                                                  |[9911449]         |
+|Shadowrun Returns                                                                |[9911449]         |
+|Tank On Tank Digital  - West Front                                               |[9911449]         |
+|Velvet Assassin                                                                  |[9911449]         |
+|INSURGENCY: Modern Infantry Combat                                               |[9911449]         |
+|Command Ops 2 Core Game                                                          |[9911449]         |
+|Black Mesa                                                                       |[9911449]         |
+|XCOM: Enemy Unknown                                                              |[9911449]         |
+|Simutrans                                                                        |[9911449]         |
+|Euro Truck Simulator 2                                                           |[9911449]         |
+|ABZU                                                                             |[9911449]         |
+|Valentino Rossi The Game                                                         |[9911449]         |
+|Rise of Nations: Extended Edition                                                |[9911449]         |
+|Knights and Merchants                                                            |[9911449]         |
+|articy:draft 3                                                                   |[9911449]         |
+|Gary Grigsby's War in the East                                                   |[9911449]         |
+|MORDHAU                                                                          |[9911449]         |
+|Theatre of War                                                                   |[9911449]         |
+|Unstoppable Gorg                                                                 |[9911449]         |
+|Worms Crazy Golf                                                                 |[9911449]         |
+|Sid Meier's Railroads!                                                           |[9911449]         |
+|Victoria 3                                                                       |[9911449]         |
+|NASCAR '15 Victory Edition                                                       |[9911449]         |
+|Unturned                                                                         |[8971360]         |
+|Combat Mission Shock Force 2                                                     |[9911449]         |
+|Rise of Flight United                                                            |[9911449]         |
+|Panzer Tactics HD                                                                |[9911449]         |
+|Advanced Tactics Gold                                                            |[9911449]         |
+|The Tiny Bang Story                                                              |[9911449]         |
+|Homeworld Remastered Collection                                                  |[9911449]         |
+|Shop Heroes                                                                      |[9911449]         |
+|The Expendabros                                                                  |[9911449]         |
+|WARTILE                                                                          |[9911449]         |
+|Rise of Prussia Gold                                                             |[9911449]         |
+|Total War: MEDIEVAL II – Definitive Edition                                      |[8971360]         |
+|South Park™: The Stick of Truth™                                                 |[11277999]        |
+|Microsoft Flight Simulator X: Steam Edition                                      |[9911449]         |
+|BRAIN / OUT                                                                      |[9911449]         |
+|Costume Quest                                                                    |[9911449]         |
+|Overcooked                                                                       |[9911449]         |
+|Battle Academy 2: Eastern Front                                                  |[9911449]         |
+|To End All Wars                                                                  |[9911449]         |
+|Tom Clancy's Rainbow Six® Siege                                                  |[9911449]         |
++---------------------------------------------------------------------------------+------------------+
 
 
 
-Execution time (preprocessing): 2115 ms
+Execution time (preprocessing): 1881 ms
 
 
-Execution time (TF-IDF calculation): 62662 ms
+Execution time (TF-IDF calculation): 50544 ms
 
 
-Execution time (cosine similarity calculation): 413180 ms
+Execution time (cosine similarity calculation): 418425 ms
 
 
-Execution time (final recommendation): 268536 ms
+Execution time (final recommendation): 406025 ms
 
-
-Execution time (total): 746494 ms
      */
 
 
