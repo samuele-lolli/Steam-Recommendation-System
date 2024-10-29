@@ -13,8 +13,17 @@ object tagRDD {
     //Initialize SparkSession
     val spark = builder
       .appName("recommendationsystem")
-      .config("spark.master", "local[*]")
-      .getOrCreate()
+       .config("spark.master", "local[*]")
+      /* .config("spark.executor.memory", "48g") // Allocate 48 GB for each executor
+        .config("spark.driver.memory", "8g")    // Allocate 8 GB for the driver
+        .config("spark.executor.cores", "4")    // Use 4 cores per executor for parallelism
+        .config("spark.default.parallelism", "32") // Set parallelism for transformations
+        .config("spark.sql.shuffle.partitions", "32") // Optimize shuffle partitions
+        .config("spark.dynamicAllocation.enabled", "true")
+        .config("spark.dynamicAllocation.minExecutors", "2")
+        .config("spark.dynamicAllocation.maxExecutors", "6")
+       */
+      .getOrCreate
 
 
     val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
@@ -57,7 +66,7 @@ object tagRDD {
     //PREPROCESSING
     val tPreProcessingI = System.nanoTime()
 
-    val dfRec = spark.read.format("csv").option("header", "true").schema(recSchema).load(dataPathRec).filter("is_recommended = true")
+    val dfRec = spark.read.format("csv").option("header", "true").schema(recSchema).load(dataPathRec).filter("is_recommended = true")//.sample(withReplacement = false, fraction = 0.35)
     val dfGames = spark.read.format("csv").option("header", "true").schema(gamesSchema).load(dataPathGames)
     val dfMetadata = spark.read.format("json").schema(metadataSchema).load(metadataPath)
 
@@ -267,6 +276,12 @@ object tagRDD {
 
     println("Top 3 similar users")
     recommendations.take(3).foreach(println)
+    /*
+    Top 3 similar users
+(8971360,0.88100129281368)
+(9911449,0.8785642563919683)
+(11277999,0.8678767593227635)
+     */
 
     val finalRecommendations = filterAndMap(mergedRDD,
       { case (_, tag, user) => userIdsToFind.contains(user) && !titlesPlayedByTargetUser.contains(tag)},
@@ -303,128 +318,6 @@ object tagRDD {
     println(s"\n\nExecution time(final recommendation): ${(tFinalRecommendF - tFinalRecommendI) / 1000000}ms\n")
     println(s"\n\nExecution time(total): ${(tFinalRecommendF - tPreProcessingI) / 1000000}ms\n")
 
-
-    /*
-    (1299120,Mosaique Neko Waifus 2,13498880,10381354,11346100)
-(1211360,NEOMORPH,13498880)
-(382560,Hot Lava,13498880)
-(333600,NEKOPARA Vol. 1,11346100,13498880)
-(748480,Wild Romance: Mofu Mofu Edition,11346100,10381354)
-(1222160,Chinese Brush Simulator,13498880)
-(48000,LIMBO,10381354)
-(240720,Getting Over It with Bennett Foddy,13498880)
-(356400,Thumper,13498880)
-(435120,Rusty Lake Hotel,10381354)
-(687920,Tropical Liquor,10381354)
-(1194560,单身狗的最后机会,10381354)
-(1607280,YUME 2 : Sleepless Night,10381354)
-(1377360,Vampires' Melody,10381354)
-(1570960,Grey Instinct,11346100)
-(1186400,West Sweety,10381354,13498880)
-(1418160,Happy Quest,10381354,11346100,13498880)
-(1252560,Love Breakout,13498880,10381354)
-(6000,STAR WARS™ Republic Commando™,11346100)
-(1012880,60 Seconds! Reatomized,13498880)
-(32370,STAR WARS™ - Knights of the Old Republic™,11346100)
-(1393410,Seek Girl V,10381354,13498880)
-(1058530,H-Rescue,10381354,13498880)
-(1419730,Seek Girl Ⅵ,13498880,10381354,11346100)
-(410850,DRAGON QUEST HEROES™ Slime Edition,11346100)
-(899970,NEKOPARA Extra,11346100)
-(1464930,Seek Girl Ⅶ,11346100,13498880,10381354)
-(1710930,Bubble People,10381354)
-(1256610,Dream Date,13498880,10381354)
-(692850,Bloodstained: Ritual of the Night,11346100)
-(540610,Delicious! Pretty Girls Mahjong Solitaire,11346100)
-(407330,Sakura Dungeon,11346100)
-(862690,Kidnapper: Gosh I'm Kidnapped by a Pupil,11346100)
-(1722770,Dream Girls Collection,11346100)
-(569810,LEAVES - The Return,13498880)
-(17410,Mirror's Edge™,11346100)
-(844930,Fox Hime Zero,10381354)
-(1102130,Florence,10381354)
-(822930,Wolf Tails,11346100)
-(1109570,Word Game,10381354)
-(1422610,Aurora,11346100,13498880)
-(1576130,IdolDays,10381354)
-(803330,Destroy All Humans!,11346100)
-(1605010,Adorable Witch,11346100,10381354)
-(998930,Seek Girl,11346100)
-(1222690,Dragon Age™ Inquisition,11346100)
-(47810,Dragon Age: Origins - Ultimate Edition,11346100)
-(1126290,Lost,13498880,10381354)
-(1385730,Mosaique Neko Waifus 3,10381354,11346100,13498880)
-(501300,What Remains of Edith Finch,10381354)
-(35140,Batman: Arkham Asylum Game of the Year Edition,11346100)
-(1067540,Röki,10381354)
-(1611300,Happy Guy,10381354)
-(1504020,Mosaique Neko Waifus 4,10381354,13498880,11346100)
-(1238020,Mass Effect™ 3 N7 Digital Deluxe Edition (2012),11346100)
-(200260,Batman: Arkham City - Game of the Year Edition,11346100)
-(1548820,Happy Puzzle,13498880,10381354,11346100)
-(17460,Mass Effect (2007),11346100)
-(356500,STAR WARS™ Galactic Battlegrounds Saga,11346100)
-(1732740,Sakura Hime,10381354)
-(1709460,Hot And Lovely 4,13498880,10381354)
-(6020,STAR WARS™ Jedi Knight - Jedi Academy™,11346100)
-(384180,Prominence Poker,13498880)
-(939620,Pleasure Puzzle:Portrait 趣拼拼：肖像画,10381354)
-(1072420,DRAGON QUEST BUILDERS™ 2,11346100)
-(1202900,Assemble with Care,10381354)
-(208580,STAR WARS™ Knights of the Old Republic™ II - The Sith Lords™,11346100)
-(654820,Akin Vol 2,13498880)
-(1038740,Fluffy Store,10381354)
-(972660,Spiritfarer®: Farewell Edition,10381354)
-(1306580,Left on Read,11346100)
-(828070,Treasure Hunter Claire,11346100)
-(22230,Rock of Ages,11346100)
-(368230,Kingdom: Classic,10381354)
-(487430,KARAKARA,11346100)
-(1502230,Tower of Waifus,10381354,13498880)
-(1618230,恋爱关系/Romance,13498880)
-(1354230,Love Tavern,11346100,10381354)
-(802870,The Ditzy Demons Are in Love With Me,10381354,13498880)
-(1101270,Anime Artist,11346100)
-(1135830,Brave Alchemist Colette,11346100)
-(32470,STAR WARS™ Empire at War - Gold Pack,11346100)
-(1393350,Swaying Girl,13498880)
-(1008710,Wet Girl,13498880,11346100)
-(577670,Demolish & Build 2018,13498880)
-(969990,SpongeBob SquarePants: Battle for Bikini Bottom - Rehydrated,11346100)
-(914710,Cat Quest II,13498880)
-(1153430,Love wish,10381354,13498880)
-(1295510,DRAGON QUEST® XI S: Echoes of an Elusive Age™ - Definitive Edition,11346100)
-(1146630,Yokai's Secret,10381354,11346100)
-(1986230,What if your girl was a frog?,11346100)
-(1908870,'LIFE' not found;,11346100)
-(1336790,Mini Words: Top Games,11346100)
-(1150950,Timelie,10381354)
-(1508680,Love n War: Warlord by Chance,10381354)
-(1460040,Love Fantasy,13498880)
-(1113560,NieR Replicant™ ver.1.22474487139...,11346100)
-(1127400,Mindustry,13498880)
-(32440,LEGO® Star Wars™ - The Complete Saga,11346100)
-(1523400,Livestream: Escape from Hotel Izanami,10381354)
-
-
-Execution time(preprocessing): 10299ms
-
-
-
-Execution time(Tf-Idf calculation): 77646ms
-
-
-
-Execution time(Cosine similarity calculation): 103851ms
-
-
-
-Execution time(final recommendation): 883ms
-
-
-
-Execution time(total): 192681ms
-     */
     spark.stop()
   }
 }

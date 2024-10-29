@@ -15,7 +15,16 @@ object tagMLlib {
     val spark = SparkSession.builder
       .appName("recommendationsystem")
       .config("spark.master", "local[*]")
+    /* .config("spark.executor.memory", "48g") // Allocate 48 GB for each executor
+      .config("spark.driver.memory", "8g")    // Allocate 8 GB for the driver
+      .config("spark.executor.cores", "4")    // Use 4 cores per executor for parallelism
+      .config("spark.default.parallelism", "32") // Set parallelism for transformations
+      .config("spark.sql.shuffle.partitions", "32") // Optimize shuffle partitions
+      .config("spark.dynamicAllocation.enabled", "true")
+      .config("spark.dynamicAllocation.minExecutors", "2")
+      .config("spark.dynamicAllocation.maxExecutors", "6")
 
+     */
       .getOrCreate()
 
 
@@ -54,6 +63,7 @@ object tagMLlib {
     ))
 
     // Paths for datasets
+
     val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
     val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
     val metadataPath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games_metadata.json"
@@ -61,7 +71,7 @@ object tagMLlib {
     val tPreProcessingI = System.nanoTime()
 
     // Load datasets
-    val dfRec = spark.read.format("csv").option("header", "true").schema(recSchema).load(dataPathRec).filter("is_recommended = true")
+    val dfRec = spark.read.format("csv").option("header", "true").schema(recSchema).load(dataPathRec).filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35)
     val dfGames = spark.read.format("csv").option("header", "true").schema(gamesSchema).load(dataPathGames)
     val dfMetadata = spark.read.format("json").schema(metadataSchema).load(metadataPath)
 
