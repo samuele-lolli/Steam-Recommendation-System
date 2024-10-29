@@ -12,14 +12,43 @@ object tagSQL {
     // Initialize SparkSession
     val spark = SparkSession.builder
       .appName("recommendationsystem")
-      .config("spark.master", "local[*]")
-      .config("spark.driver.memory", "6g")
+      // Executor Memory and Cores: Balanced to fit 2 executors per worker node
+      .config("spark.executor.memory", "40g")          // Allocate about 80% memory for each executor
+      .config("spark.executor.cores", "4")             // 4 cores per executor
+      .config("spark.executor.instances", "4")         // Static executors for 2 primary workers (2 per worker)
+
+      // Dynamic Allocation for Scaling with Spot Node
+      .config("spark.dynamicAllocation.enabled", "true")
+      .config("spark.dynamicAllocation.minExecutors", "4")   // Minimum executors: for 2 primary workers
+      .config("spark.dynamicAllocation.maxExecutors", "5")   // Max executors: to include the preemptible node
+      .config("spark.dynamicAllocation.executorIdleTimeout", "60s")
+
+      // Speculative Execution to handle stragglers
+      .config("spark.speculation", "true")
+      .config("spark.speculation.interval", "100ms")
+      .config("spark.speculation.multiplier", "1.5")
+
+      // Shuffle and Serialization Optimizations
+      .config("spark.sql.shuffle.partitions", "96")  // (4 cores * 4 executors * 6) for balanced parallelism
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .config("spark.rdd.compress", "true")
+      .config("spark.shuffle.file.buffer", "1m")     // Larger buffer for shuffling to avoid frequent disk I/O
+
+      // Memory Management Adjustments
+      .config("spark.memory.fraction", "0.7")        // Increase execution memory for large operations
+      .config("spark.memory.storageFraction", "0.3") // Leave less for storage due to MEMORY_AND_DISK persistence
+
+      // Adaptive Query Execution for optimized shuffling and partitioning
+      .config("spark.sql.adaptive.enabled", "true")
+      .config("spark.sql.adaptive.coalescePartitions.enabled", "true") // Combine small partitions to reduce overhead
+
       .getOrCreate()
 
 
-    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
-    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
-    val metadataPath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games_metadata.json"
+
+    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
+    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
+    val metadataPath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games_metadata.json"
 
     val recSchema = StructType(Array(
       StructField("app_id", IntegerType, nullable = false), // ID del gioco
@@ -219,10 +248,105 @@ object tagSQL {
     println(s"\n\nExecution time (total): ${(tFinalRecommendF - tPreProcessingI) / 1000000} ms")
 
 
+    //LOCALE
+    /*
+    +--------------------+-------+
+|               title|user_id|
++--------------------+-------+
+|         Garry's Mod|7002264|
+|DRAGON BALL Z: KA...|7002264|
+|Total War: WARHAMMER|7002264|
+|Halo: The Master ...|7002264|
+|           Evil West|7002264|
+|                GTFO|7002264|
+|  Grand Theft Auto V|7002264|
+|         War Thunder|7002264|
+|Red Dead Redempti...|7002264|
+|    Wallpaper Engine|7002264|
+|Sea of Thieves 20...|7002264|
+|      Cyberpunk 2077|7002264|
+|          Green Hell|7002264|
+|Age of Empires IV...|7002264|
+|               Hades|7002264|
+|          Subnautica|7002264|
+|       Apex Legends™|7002264|
+|       Call of Duty®|7002264|
+|Warhammer: Vermin...|7002264|
+|STAR WARS™: The O...|7002264|
++--------------------+-------+
+only showing top 20 rows
+
+
+
+Execution time (preprocessing): 2115 ms
+
+
+Execution time (TF-IDF calculation): 62662 ms
+
+
+Execution time (cosine similarity calculation): 413180 ms
+
+
+Execution time (final recommendation): 268536 ms
+
+
+Execution time (total): 746494 ms
+     */
+
+
+    //CLUSTER-PRIMO
+    /*
+    +--------+------------------+
+| user_id| cosine_similarity|
++--------+------------------+
+|   65064|0.8795445076711828|
+|13498880|0.8783365585420777|
+| 7002264|0.8752521190765519|
++--------+------------------+
+
++--------------------------------------+----------+
+|title                                 |user_ids  |
++--------------------------------------+----------+
+|100% Orange Juice                     |[7002264] |
+|200% Mixed Juice!                     |[7002264] |
+|3D Custom Lady Maker                  |[65064]   |
+|60 Seconds!                           |[13498880]|
+|60 Seconds! Reatomized                |[13498880]|
+|9 Monkeys of Shaolin                  |[65064]   |
+|99 Spirits                            |[7002264] |
+|A Plague Tale: Requiem                |[65064]   |
+|A Wild Catgirl Appears!               |[7002264] |
+|ACE COMBAT™ 7: SKIES UNKNOWN          |[7002264] |
+|Adorable Witch                        |[7002264] |
+|Adorable Witch 2                      |[7002264] |
+|Adorable Witch 3                      |[65064]   |
+|Age of Empires IV: Anniversary Edition|[7002264] |
+|Aimlabs                               |[13498880]|
+|Akin Vol 2                            |[13498880]|
+|Alan Wake                             |[65064]   |
+|Alien Shooter                         |[13498880]|
+|Among Us                              |[7002264] |
+|Apex Legends™                         |[7002264] |
++--------------------------------------+----------+
+only showing top 20 rows
+
+
+
+Execution time (preprocessing): 4770 ms
+
+
+Execution time (TF-IDF calculation): 49883 ms
+
+
+Execution time (cosine similarity calculation): 147905 ms
+
+
+Execution time (final recommendation): 101625 ms
+
+
+Execution time (total): 304185 ms
+     */
 
     spark.stop()
   }
 }
-
-
-//  Word: Choices Matter, TF-IDF: 0.015813499618821978
