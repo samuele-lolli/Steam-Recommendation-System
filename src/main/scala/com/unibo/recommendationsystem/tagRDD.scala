@@ -13,12 +13,13 @@ object tagRDD {
     //Initialize SparkSession
     val spark = builder
       .appName("recommendationsystem")
+      .config("spark.master", "local[*]")
       .getOrCreate()
 
 
-    val dataPathRec = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/recommendations.csv"
-    val dataPathGames = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games.csv"
-    val metadataPath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/data/games_metadata.json"
+    val dataPathRec = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/recommendations.csv"
+    val dataPathGames = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games.csv"
+    val metadataPath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/games_metadata.json"
 
     val recSchema = StructType(Array(
       StructField("app_id", IntegerType, nullable = false), // ID del gioco
@@ -214,7 +215,7 @@ object tagRDD {
           }
           .collect() // Collect the results to the driver
           .sortBy(-_._2) // Sort by similarity (descending)
-          .take(10) // Take top 10 similar users
+          .take(3) // Take top 10 similar users
 
         similarUsers // Return the list of similar users
       } else {
@@ -265,7 +266,7 @@ object tagRDD {
     val userIdsToFind = recommendations.take(3).map(_._1).toSet
 
     println("Top 3 similar users")
-    userIdsToFind.foreach(println)
+    recommendations.take(3).foreach(println)
 
     val finalRecommendations = filterAndMap(mergedRDD,
       { case (_, tag, user) => userIdsToFind.contains(user) && !titlesPlayedByTargetUser.contains(tag)},

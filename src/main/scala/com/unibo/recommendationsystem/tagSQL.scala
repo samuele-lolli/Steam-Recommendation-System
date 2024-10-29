@@ -174,7 +174,14 @@ object tagSQL {
 
     // Step 3: Get the top 3 users with highest cosine similarity
     val top3Users = otherUsersWithSimilarity.orderBy(desc("cosine_similarity")).limit(3)
-    top3Users.show()
+
+    val top3UsersList = top3Users.collect()
+
+    // Print top 3 users with their cosine similarity scores
+    println("Top 3 users with highest cosine similarity:")
+    top3UsersList.foreach(row =>
+      println(s"userId: ${row.getAs[Int]("user_id")}, cosine similarity: ${row.getAs[Double]("cosine_similarity")}")
+    )
 
     /*
     [11277999,8971360,9911449]
