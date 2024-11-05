@@ -153,7 +153,7 @@ Elapsed time for Getting Similar Users:	533863ms (533863187600ns)
   */
 
   def getFinalRecommendations(top3Users: DataFrame, targetUser: Int): Unit = {
-    val topSimilarUsers = top3Users.select("user_id").collect().map(row => row.getAs[Int]("user_id")).toList
+    val topSimilarUsers = top3Users.select("user_ids").collect().map(row => row.getAs[Int]("user_id")).toList
 
     val gamesByTopUsers = dfRec.filter(col("user_id").isin(topSimilarUsers: _*))  // Use : _* to expand the list
       .select("app_id", "user_id")
