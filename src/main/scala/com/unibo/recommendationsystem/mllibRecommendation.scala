@@ -3,12 +3,13 @@ package com.unibo.recommendationsystem
 import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.ml.feature.{HashingTF, IDF}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
+import org.apache.spark.sql
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
-class mllibRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames: String, metadataPath: String) {
+class mllibRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   def recommend(targetUser: Int): Unit = {
     // Time the preprocessing of data
@@ -43,15 +44,11 @@ class mllibRecommendation (spark: SparkSession, dataPathRec: String, dataPathGam
 
   def preprocessData(): (DataFrame, DataFrame) = {
 
-    val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(dataPathRec).filter("is_recommended = true")
-    val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(dataPathGames)
-    val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(metadataPath)
-
-    val selectedRec = dfRec.select("app_id", "user_id")
-    val selectedGames = dfGames.select("app_id", "title")
+    val selectedRec = dataRec.select("app_id", "user_id")
+    val selectedGames = dataGames.select("app_id", "title")
 
     val merged = selectedRec.join(selectedGames, Seq("app_id"))
-      .join(dfMetadata.drop("description"), Seq("app_id"))
+      .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
     val cleanMerge = merged.withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))

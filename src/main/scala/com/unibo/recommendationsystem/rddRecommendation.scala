@@ -2,12 +2,12 @@ package com.unibo.recommendationsystem
 
 import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
 import scala.reflect.ClassTag
 
-class rddRecommendation(spark: SparkSession, datapathRec: String, datapathGames: String, datapathMetadata: String) {
+class rddRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   // Logica di raccomandazione
   def recommend(targetUser: Int): Unit = {
@@ -56,17 +56,13 @@ class rddRecommendation(spark: SparkSession, datapathRec: String, datapathGames:
   }
 
   private def preprocessData() : (RDD[(Int, String, String)], RDD[(String, String)], RDD[(Int, String)]) = {
-    val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(datapathRec).filter("is_recommended = true")
-    val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(datapathGames)
-    val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(datapathMetadata)
-
 
     def processRDD[T: ClassTag](rdd: RDD[org.apache.spark.sql.Row], processingFunc: org.apache.spark.sql.Row => T): RDD[T] = {
       rdd.map(processingFunc)
     }
 
     // Change the structure to include userId
-    val selectedRecRDD: RDD[(Int, String)] = processRDD(dfRec.rdd, row => (row.getInt(0), row.getInt(6).toString))
+    val selectedRecRDD: RDD[(Int, String)] = processRDD(dataRec.rdd, row => (row.getInt(0), row.getInt(6).toString))
 
     // Step 2: Create a higher-order function to map game titles
     def mapGames[T](rdd: RDD[org.apache.spark.sql.Row], mappingFunc: org.apache.spark.sql.Row => (Int, T)): Map[Int, T] = {
@@ -74,7 +70,7 @@ class rddRecommendation(spark: SparkSession, datapathRec: String, datapathGames:
     }
 
     // Create title dictionary mapping appId to title
-    val tags = mapGames(dfMetadata.rdd, row => (row.getInt(0), row.getList(2).toArray.map(_.toString).mkString(",").toLowerCase.trim.replaceAll("\\s+", " ")))
+    val tags = mapGames(metadata.rdd, row => (row.getInt(0), row.getList(2).toArray.map(_.toString).mkString(",").toLowerCase.trim.replaceAll("\\s+", " ")))
 
     val broadcastTagMap = spark.sparkContext.broadcast(tags)
 
@@ -114,7 +110,7 @@ class rddRecommendation(spark: SparkSession, datapathRec: String, datapathGames:
     val explodedRDD = explodeRDD(filteredAggregateDataRDD, (userId, words) => words.map(word => (userId, word)))
 
 
-    val gamesTitlesRDD = dfGames.rdd.map(row => (row.getAs[Int]("app_id"), row.getAs[String]("title")))
+    val gamesTitlesRDD = dataGames.rdd.map(row => (row.getAs[Int]("app_id"), row.getAs[String]("title")))
 
 
 

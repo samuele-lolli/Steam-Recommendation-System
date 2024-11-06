@@ -2,13 +2,12 @@ package com.unibo.recommendationsystem
 
 import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, Encoder, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
 import scala.collection.Map
 
-class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames: String, metadataPath: String) {
-
+class sqlRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
@@ -24,15 +23,11 @@ class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames
 
   private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
 
-    val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(dataPathRec).filter("is_recommended = true")
-    val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(dataPathGames)
-    val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(metadataPath)
-
-    val selectedRec = dfRec.select("app_id", "user_id")
-    val selectedGames = dfGames.select("app_id", "title")
+    val selectedRec = dataRec.select("app_id", "user_id")
+    val selectedGames = dataGames.select("app_id", "title")
 
     val merged = selectedRec.join(selectedGames, Seq("app_id"))
-      .join(dfMetadata.drop("description"), Seq("app_id"))
+      .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
     val cleanMerge = merged
@@ -52,7 +47,7 @@ class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames
     val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
       .persist(StorageLevel.MEMORY_AND_DISK)
 
-    val gamesTitles = dfGames.select("app_id", "title")
+    val gamesTitles = dataGames.select("app_id", "title")
 
     (explodedDF, filteredData, gamesTitles, cleanMerge)
   }
