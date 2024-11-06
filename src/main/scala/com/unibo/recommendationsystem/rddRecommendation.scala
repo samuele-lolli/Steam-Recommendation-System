@@ -14,28 +14,28 @@ class rddRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: 
     // Time the preprocessing of data
     println("Preprocessing data...")
     //val tPreProcessingI = System.nanoTime()
-    val (mergedRdd, explodedRDD, gamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "RDD")
+    val (mergedRdd, explodedRDD, gamesData) = timeUtils.time(spark, preprocessData(), "Preprocessing Data", "RDD")
     //val (mergedRdd, explodedRDD, gamesData) = preprocessData()
     //val tPreProcessingF = System.nanoTime()
 
     // Time the TF-IDF calculation
     println("Calculate term frequency and inverse document frequency...")
     //val tTFIDFI = System.nanoTime()
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedRDD), "Calculating TF-IDF", "RDD")
+    val tfidfValues = timeUtils.time(spark, calculateTFIDF(explodedRDD), "Calculating TF-IDF", "RDD")
     //val tfidfValues = calculateTFIDF(explodedRDD)
     //val tTFIDFF = System.nanoTime()
 
     // Time the similarity computation
     println("Calculate cosine similarity to get similar users...")
     //val tCosineSimilarityI = System.nanoTime()
-    val topUsersSimilarity = timeUtils.time(getSimilarUsers(targetUser, tfidfValues), "Getting Similar Users", "RDD")
+    val topUsersSimilarity = timeUtils.time(spark, getSimilarUsers(targetUser, tfidfValues), "Getting Similar Users", "RDD")
     //val topUsersSimilarity = getSimilarUsers(targetUser, tfidfValues)
     //val tCosineSimilarityF = System.nanoTime()
 
     // Time the recommendation generation
     println("Calculate final recommendation...")
     //val tFinalRecommendI = System.nanoTime()
-    timeUtils.time(getRecommendation(mergedRdd, topUsersSimilarity, gamesData, targetUser), "Generating Recommendations", "RDD")
+    timeUtils.time(spark, getRecommendation(mergedRdd, topUsersSimilarity, gamesData, targetUser), "Generating Recommendations", "RDD")
    //getRecommendation(mergedRdd, topUsersSimilarity, gamesData, targetUser)
     //val tFinalRecommendF = System.nanoTime()
 

@@ -11,14 +11,13 @@ class sqlRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: 
 
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    //Elapsed time for Preprocessing Data:	1495ms (1495704000ns)
-    val (explodedDF, filteredData, gamesTitles, cleanMerge) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL")
+    val (explodedDF, filteredData, gamesTitles, cleanMerge) = timeUtils.time(spark,preprocessData(), "Preprocessing Data", "SQL")
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL")
+    val tfidfValues = timeUtils.time(spark, calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL")
     println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL")
+    val topUsersSimilarity = timeUtils.time(spark, computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL")
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, cleanMerge), "Generating Recommendations", "SQL")
+    timeUtils.time(spark,getFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, cleanMerge), "Generating Recommendations", "SQL")
   }
 
   private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
