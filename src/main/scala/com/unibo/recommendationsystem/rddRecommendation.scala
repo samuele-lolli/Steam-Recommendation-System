@@ -1,48 +1,53 @@
 package com.unibo.recommendationsystem
 
-import com.unibo.recommendationsystem.utils.timeUtils
+import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.json4s._
-import org.json4s.jackson.JsonMethods._
-import org.apache.spark.sql.execution.streaming.CommitMetadata.format
+import org.apache.spark.storage.StorageLevel
 
 import scala.reflect.ClassTag
 
 class rddRecommendation(spark: SparkSession, datapathRec: String, datapathGames: String, datapathMetadata: String) {
 
-  private def removeHeader(rdd: RDD[String]): RDD[String] = rdd.mapPartitionsWithIndex { (idx, iter) => if (idx == 0) iter.drop(1) else iter }
-
-  private val rddRec = removeHeader(spark.sparkContext.textFile(datapathRec))
-
-  private val rddGames = removeHeader(spark.sparkContext.textFile(datapathGames))
-
-  private val rddMetadata: RDD[String] = spark.sparkContext.textFile(datapathMetadata)
-
   // Logica di raccomandazione
   def recommend(targetUser: Int): Unit = {
     // Time the preprocessing of data
     println("Preprocessing data...")
-    val (mergedRdd, explodedRDD, gamesData) = timeUtils.time(preprocessData(), "Preprocessing Data")
-    /*
-    Elapsed time for Preprocessing Data:	89ms (89484250ns)
-    */
+    //val tPreProcessingI = System.nanoTime()
+    val (mergedRdd, explodedRDD, gamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "RDD")
+    //val (mergedRdd, explodedRDD, gamesData) = preprocessData()
+    //val tPreProcessingF = System.nanoTime()
+
     // Time the TF-IDF calculation
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedRDD), "Calculating TF-IDF")
-    /*
-    Elapsed time for Calculating TF-IDF:	181639ms (181639066875ns)
-     */
+    //val tTFIDFI = System.nanoTime()
+    val tfidfValues = timeUtils.time(calculateTFIDF(explodedRDD), "Calculating TF-IDF", "RDD")
+    //val tfidfValues = calculateTFIDF(explodedRDD)
+    //val tTFIDFF = System.nanoTime()
 
     // Time the similarity computation
     println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarity = timeUtils.time(getSimilarUsers(targetUser, tfidfValues), "Getting Similar Users")
-    /*
-    Elapsed time for Getting Similar Users:	204060ms (204060907125ns)
-    */
+    //val tCosineSimilarityI = System.nanoTime()
+    val topUsersSimilarity = timeUtils.time(getSimilarUsers(targetUser, tfidfValues), "Getting Similar Users", "RDD")
+    //val topUsersSimilarity = getSimilarUsers(targetUser, tfidfValues)
+    //val tCosineSimilarityF = System.nanoTime()
+
     // Time the recommendation generation
     println("Calculate final recommendation...")
-    timeUtils.time(getRecommendation(mergedRdd, topUsersSimilarity, gamesData, targetUser), "Generating Recommendations")
+    //val tFinalRecommendI = System.nanoTime()
+    timeUtils.time(getRecommendation(mergedRdd, topUsersSimilarity, gamesData, targetUser), "Generating Recommendations", "RDD")
+   //getRecommendation(mergedRdd, topUsersSimilarity, gamesData, targetUser)
+    //val tFinalRecommendF = System.nanoTime()
+
+/*
+    println(s"\n\nExecution time(preprocessing): ${(tPreProcessingF - tPreProcessingI) / 1000000}ms\n")
+    println(s"\n\nExecution time(Tf-Idf calculation): ${(tTFIDFF - tTFIDFI) / 1000000}ms\n")
+    println(s"\n\nExecution time(Cosine similarity calculation): ${(tCosineSimilarityF - tCosineSimilarityI) / 1000000}ms\n")
+    println(s"\n\nExecution time(final recommendation): ${(tFinalRecommendF - tFinalRecommendI) / 1000000}ms\n")
+    println(s"\n\nExecution time(total): ${(tFinalRecommendF - tPreProcessingI) / 1000000}ms\n")
+
+ */
+
     /*
     Elapsed time for Generating Recommendations:	41423ms (41423732625ns)
      */
@@ -50,242 +55,277 @@ class rddRecommendation(spark: SparkSession, datapathRec: String, datapathGames:
 
   }
 
-  // Preprocessing dei dati
-  private def preprocessData(): (RDD[(Int, String, String)], RDD[(String, String)], RDD[(Int, String)]) = {
+  private def preprocessData() : (RDD[(Int, String, String)], RDD[(String, String)], RDD[(Int, String)]) = {
+    val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(datapathRec).filter("is_recommended = true")
+    val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(datapathGames)
+    val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(datapathMetadata)
 
-    case class recommend(appId: Int, userId: String, isRecommended: Boolean)
 
-    val appUserRDD = rddRec.map{ row =>
-      val fields = row.split(",").map(_.trim)
-      recommend(fields(0).toInt, fields(6), fields(4).toBoolean)
+    def processRDD[T: ClassTag](rdd: RDD[org.apache.spark.sql.Row], processingFunc: org.apache.spark.sql.Row => T): RDD[T] = {
+      rdd.map(processingFunc)
     }
 
-    // Funzione per estrarre `app_id` e `user_id` da `rddRec`
-    /* val extractAppIdUserId: String => (Int, String, Boolean) = line => {
-       val fields = line.split(",")
-       val appId = fields(0).toInt
-       val userId = fields(6)
-       val isRecommended = fields(4).toBoolean
-       (appId, userId, isRecommended)
-     }
+    // Change the structure to include userId
+    val selectedRecRDD: RDD[(Int, String)] = processRDD(dfRec.rdd, row => (row.getInt(0), row.getInt(6).toString))
 
-     */
-
-    // Processa `rddRec` per ottenere un RDD di (appId, userId)
-    //val appUserRDD: RDD[(Int, String, Boolean)] = rddRec.map(extractAppIdUserId)
-
-    val recommendedRDD: RDD[(Int, String)] = appUserRDD
-      .filter(_.isRecommended)                    // Filter only recommended items
-      .map(recommend => (recommend.appId, recommend.userId))
-
-    // Funzione per estrarre `app_id` e `tags` da `rddMetadata`
-    val extractAppIdTags: String => (Int, String) = line => {
-      val json = parse(line)
-      val appId = (json \ "app_id").extract[Int]
-      val tagsArray = (json \ "tags").extract[Array[String]]
-      val tags = tagsArray.mkString(",")
-      (appId, tags)
+    // Step 2: Create a higher-order function to map game titles
+    def mapGames[T](rdd: RDD[org.apache.spark.sql.Row], mappingFunc: org.apache.spark.sql.Row => (Int, T)): Map[Int, T] = {
+      rdd.map(mappingFunc).collect().toMap
     }
 
-    val tagsRDD: RDD[(Int, String)] = rddMetadata.map(extractAppIdTags)
+    // Create title dictionary mapping appId to title
+    val tags = mapGames(dfMetadata.rdd, row => (row.getInt(0), row.getList(2).toArray.map(_.toString).mkString(",").toLowerCase.trim.replaceAll("\\s+", " ")))
 
+    val broadcastTagMap = spark.sparkContext.broadcast(tags)
 
-
-    case class AppTags(appId: Int, tags: String)
-
-    // Define the function to parse JSON and create an AppTags instance
-    /*val extractAppIdTags: String => AppTags = line => {
-      val json = parse(line)
-      val appId = (json \ "app_id").extract[Int]
-      val tagsArray = (json \ "tags").extract[Array[String]]
-      val tags = tagsArray.mkString(",")
-      AppTags(appId, tags)
-    }*/
-
-
-
-    // Map each line in rddMetadata to an AppTags instance
-    //val tagsRDD: RDD[AppTags] = rddMetadata.map(extractAppIdTags)
-
-    // Unisce `appUserRDD` e `appTagsRDD` su `appId` per creare un RDD con (appId, tag, userId)
-    val mergedRDD: RDD[(Int, String, String)] = recommendedRDD
-      .join(tagsRDD) // Ottieni RDD[(appId, (userId, tag))]
-      .map { case (appId, (userId, tag)) => (appId, tag, userId) } // Trasforma in (appId, tag, userId)
-      .filter { case (_, tag, _) => tag.nonEmpty } // Filtra tag non vuoti
-    //.persist(StorageLevel.MEMORY_AND_DISK)
-
-    // Estrai `app_id` e `title` da `rddGames` come RDD[(appId, title)]
-    val gameTitlesRDD: RDD[(Int, String)] = rddGames.map { line =>
-      val fields = line.split(",")
-      val appId = fields(0).toInt
-      val title = fields(1)
-      (appId, title)
+    // Update mergeRDDs to no longer require tagMap as a parameter
+    def mergeRDDs[T: ClassTag](recRDD: RDD[(Int, String)], mapFunc: (Int, String) => T): RDD[T] = {
+      recRDD.map { case (appId, userId) => mapFunc(appId, userId) }
     }
 
-    // Raggruppa i titoli dei giochi per utente e accumula le parole
-    val aggregatedTitlesByUser = mergedRDD
-      .map { case (_, title, user) => (user, title.split("\\s+")) } // Suddivide il titolo in parole
-      .reduceByKey(_ ++ _) // Accumula le parole per ogni utente
+    // Update mapFunc to use broadcastTagMap instead of passing tagMap
+    val mergedRDD = mergeRDDs(selectedRecRDD, (appId: Int, userId: String) => {
+      val tag = broadcastTagMap.value.getOrElse(appId, "")  // Retrieve the game title
+      (appId, tag, userId)  // Now include userId in the output
+    })
+      .filter { case (_, tag, _) => tag.nonEmpty }  // Filter out empty tags
+      .persist(StorageLevel.MEMORY_AND_DISK)
 
-    // Esplode le parole aggregate in singoli record per ogni utente
-    val explodedWordsByUser = aggregatedTitlesByUser
-      .flatMap { case (userId, words) => words.map(word => (userId, word)) }
 
-    (mergedRDD, explodedWordsByUser, gameTitlesRDD)
+    // Step 4: Aggregate data by user using a higher-order function to pass a filtering condition
+    def aggregateByUser[T](rdd: RDD[(String, Array[String])], filterFunc: Array[String] => Boolean): RDD[(String, Array[String])] = {
+      rdd.filter { case (_, words) => filterFunc(words) }
+    }
+
+    // Define filtering logic as a function
+    val minWords = 0
+    val filterCondition = (words: Array[String]) => words.length >= minWords
+
+    val aggregateDataRDD = mergedRDD
+      .map { case (_, title, user) => (user, title.split("\\s+")) } // Split title into words
+      .reduceByKey { (arr1, arr2) => arr1 ++ arr2 } // Concatenate arrays of words
+
+    val filteredAggregateDataRDD = aggregateByUser(aggregateDataRDD, filterCondition)
+
+    def explodeRDD[T: ClassTag](rdd: RDD[(String, Array[String])], explodeFunc: (String, Array[String]) => Iterable[T]): RDD[T] = {
+      rdd.flatMap { case (userId, words) => explodeFunc(userId, words) }
+    }
+
+    val explodedRDD = explodeRDD(filteredAggregateDataRDD, (userId, words) => words.map(word => (userId, word)))
+
+
+    val gamesTitlesRDD = dfGames.rdd.map(row => (row.getAs[Int]("app_id"), row.getAs[String]("title")))
+
+
+
+    (mergedRDD, explodedRDD, gamesTitlesRDD)
   }
 
-  private def calculateTFIDF(explodeRdd: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
+  private def calculateTFIDF(explodedRdd: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
 
-    // Funzione per calcolare TF
-    def calculateTermFrequency(words: String): Map[String, Double] = {
-      val wordsArray = words.split(",")
-      val totalWords = wordsArray.length.toDouble
-      wordsArray
-        .groupBy(identity)
-        .mapValues(_.length / totalWords)
-    }
+    def calculateTFIDF[T](userWordsDataset: RDD[(String, String)],
+                          tfFunc: String => Map[String, Double],
+                          idfFunc: RDD[(String, String)] => Map[String, Double]): RDD[(String, Map[String, Double])] = {
 
-    // Funzione per calcolare IDF
-    def calculateInverseDocumentFrequency(userWordsRDD: RDD[(String, String)]): Map[String, Double] = {
+      // Group words by user
+      val groupedUserWords = userWordsDataset
+        .map { case (userId, words) => (userId, words) } // Keep as a (userId, words) pair
+        .reduceByKey { (words1, words2) => words1 + "," + words2 } // Concatenate words with a comma
+        .persist(StorageLevel.MEMORY_AND_DISK)
 
-      val totalDocuments = userWordsRDD.count().toDouble
+      // Use the provided IDF function
+      val idfValues = idfFunc(groupedUserWords)
 
-      userWordsRDD
-        .flatMap { case (_, words) => words.split(",").distinct }
-        .map(word => (word, 1))
-        .reduceByKey(_ + _)
-        .mapValues(count => math.log(totalDocuments / count))
-        .collect()
-        .toMap
-    }
-
-    // Funzione per calcolare TF-IDF
-    def calculateTFIDFForUsers(userWordsRDD: RDD[(String, String)], tfFunction: String => Map[String, Double], idfFunction: RDD[(String, String)] => Map[String, Double]): RDD[(String, Map[String, Double])] = {
-
-      val groupedWordsByUser = userWordsRDD
-        .reduceByKey(_ + "," + _)
-      // .persist(StorageLevel.MEMORY_AND_DISK)
-
-      // Calcola IDF una volta sola per tutte le parole
-      val idfValues = idfFunction(groupedWordsByUser)
-
-      // Calcola TF-IDF per ciascun utente
-      groupedWordsByUser.map { case (user, words) =>
-        val tfValues = tfFunction(words)
-        val tfidfValues = tfValues.map { case (word, tf) =>
-          (word, tf * idfValues.getOrElse(word, 0.0))
-        }
+      // Calculate TF-IDF
+      groupedUserWords.map { case (user, words) =>
+        val tfValues = tfFunc(words)
+        val tfidfValues = tfValues.map { case (word, tf) => (word, tf * idfValues.getOrElse(word, 0.0)) }
         (user, tfidfValues)
       }
     }
 
-    // Calcola i valori TF-IDF finali usando le funzioni TF e IDF definite
-    calculateTFIDFForUsers(explodeRdd, calculateTermFrequency, calculateInverseDocumentFrequency)
-  }
+    // Define term frequency (TF) calculation logic
+    val calculateTF = (userWords: String) => {
+      val wordsSplit = userWords.split(",")
+      val totalWords = wordsSplit.size.toDouble
+      wordsSplit.groupBy(identity).mapValues(_.length / totalWords)
+    }
 
-  import spark.implicits
+    // Define inverse document frequency (IDF) calculation logic
+    val calculateIDF = (userWords: RDD[(String, String)]) => {
+      val userCount = userWords.count()  // Total number of users (or documents)
+
+      // Directly compute IDF without storing intermediate 'wordsCount'
+      userWords
+        .flatMap { case (_, words) => words.split(",").distinct }  // Split and get distinct words
+        .map(word => (word, 1))  // Map each distinct word to (word, 1)
+        .reduceByKey(_ + _)      // Reduce by key to get the count of each word
+        .map { case (word, count) => (word, math.log(userCount.toDouble / count)) }  // Compute IDF
+        .collect()
+        .toMap
+    }
+
+    val tfidfValues = calculateTFIDF(explodedRdd, calculateTF, calculateIDF)
+
+    tfidfValues
+  }
 
   private def getSimilarUsers[T: ClassTag](
                                             targetUser: Int,
                                             tfidfValues: RDD[(String, Map[String, Double])]
                                           ): Array[(String, Double)] = {
 
-    // Funzione per calcolare la similarità coseno tra due vettori
-    def computeCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double]): Double = {
+    def computeCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double], dotProductFunc: (Map[String, Double], Map[String, Double]) => Double, magnitudeFunc: Map[String, Double] => Double): Double = {
+      dotProductFunc(vector1, vector2) / (magnitudeFunc(vector1) * magnitudeFunc(vector2))
+    }
 
-      // Calcolo del prodotto scalare tra i due vettori
-      val dotProduct = vector1.foldLeft(0.0) { case (acc, (key, value)) =>
-        acc + vector2.getOrElse(key, 0.0) * value
+    // Define dot product and magnitude logic
+    val dotProduct = (v1: Map[String, Double], v2: Map[String, Double]) => {
+      v1.foldLeft(0.0) { case (acc, (key, value)) =>
+        acc + v2.getOrElse(key, 0.0) * value
       }
-      // Calcolo delle magnitudini di ciascun vettore
-      val magnitude1 = math.sqrt(vector1.values.map(value => value * value).sum)
-      val magnitude2 = math.sqrt(vector2.values.map(value => value * value).sum)
-      // Calcolo della similarità coseno, con gestione della divisione per zero
-      if (magnitude1 == 0 || magnitude2 == 0) 0.0 else dotProduct / (magnitude1 * magnitude2)
     }
 
-    // Filtra il dataset per ottenere i giochi dell'utente target
-    val targetUserGamesRDD = tfidfValues
-      .filter { case (userId, _) => userId == targetUser.toString }
-      .map { case (_, gameVector) => gameVector }
-
-    // Step: verifica se l'utente target ha dei giochi
-    if (!targetUserGamesRDD.isEmpty()) {
-      // Colleziona i giochi dell'utente target
-      val targetUserGames = targetUserGamesRDD.collect().head
-
-      // Calcola la similarità per gli altri utenti
-      val similarUsers = tfidfValues
-        .filter(_._1 != targetUser.toString) // Esclude l'utente target
-        .map { case (otherUserId, otherUserGames) =>
-          (otherUserId, computeCosineSimilarity(targetUserGames, otherUserGames))
-        }
-        .collect() // Colleziona i risultati per il driver
-        .sortBy(-_._2) // Ordina per similarità (in ordine decrescente)
-        .take(3) // Prendi i top 3 utenti simili
-
-      similarUsers // Ritorna la lista degli utenti simili
-    } else {
-      // Ritorna un array vuoto se l'utente target non ha giochi
-      Array.empty[(String, Double)]
+    val magnitude = (vector: Map[String, Double]) => {
+      math.sqrt(vector.values.map(value => value * value).sum)
     }
+
+    // Step 8: Higher-order function to get similar users
+
+    def getSimilarUsers[T: ClassTag](
+                                      targetUser: Int,
+                                      tfidfValues: RDD[(String, Map[String, Double])],
+                                      similarityFunc: (Map[String, Double], Map[String, Double]) => Double
+                                    ): Array[(String, Double)] = {
+
+      // Filter to get the target user's games
+
+      val targetUserGamesRDD = tfidfValues
+        .filter { case (userId, _) => userId == targetUser.toString }
+        .map { case (_, gameVector) => gameVector }
+      //println(s"Time for filtering: ${(tFilterEnd - tFilterStart) / 1e9} seconds")
+
+      // Step 2: Check if the target user has any games
+      if (!targetUserGamesRDD.isEmpty()) {
+        // Step 3: Collect the target user's games (should be a single map)
+        val targetUserGames = targetUserGamesRDD.collect().head
+        // println(s"Time for collecting: ${(tCollectEnd - tCollectStart) / 1e9} seconds")
+
+
+        // Step 3: Compute similarity for other users
+        val similarUsers = tfidfValues
+          .filter(_._1 != targetUser.toString) // Filter out the target user
+          .map { case (otherUserId, otherUserGames) =>
+            (otherUserId, similarityFunc(targetUserGames, otherUserGames))
+          }
+          .collect() // Collect the results to the driver
+          .sortBy(-_._2) // Sort by similarity (descending)
+          .take(3) // Take top 10 similar users
+
+        similarUsers // Return the list of similar users
+      } else {
+        // Step 4: Return an empty array if the target user has no games
+        Array.empty[(String, Double)]
+      }
+    }
+
+    // Use cosine similarity logic
+    val cosineSimilarity = (v1: Map[String, Double], v2: Map[String, Double]) =>
+      computeCosineSimilarity(v1, v2, dotProduct, magnitude)
+
+    val recommendations = getSimilarUsers(targetUser, tfidfValues, cosineSimilarity)
+
+    recommendations
   }
 
   private def getRecommendation(
                                  mergedRdd: RDD[(Int, String, String)],
-                                 topUsersWithSimilarity: Array[(String, Double)],
+                                 topUsersXSimilarity: Array[(String, Double)],
                                  gamesData: RDD[(Int, String)],
                                  targetUser: Int
                                ): Unit = {
 
-    // Ottieni gli appId giocati dall'utente target
     val appIdsPlayedByTargetUser = mergedRdd
-      .filter { case (_, _, user) => user == targetUser.toString }
-      .map(_._1)
-      .distinct()
-      .collect()
-      .toSet
+      .filter { case (_, _, user) => user == targetUser.toString }  // Filter by targetUser
+      .map(_._1)  // Extract appId
+      .distinct()  // Get unique appIds
+      .collect()   // Collect appIds into an array
+      .toSet       // Convert to a Set for easy lookup
 
-    // Ottieni i titoli dei giochi giocati dall'utente target
+    // Convert dfGames to an RDD of (appId, title)
+
+    // Filter dfGamesRDD by appId and extract titles
     val titlesPlayedByTargetUser = gamesData
-      .filter { case (appId, _) => appIdsPlayedByTargetUser.contains(appId) }
-      .map(_._2)
-      .distinct()
-      .collect()
-      .toSet
+      .filter { case (appId, _) => appIdsPlayedByTargetUser.contains(appId) }  // Filter by appId in the set
+      .map(_._2)  // Extract the titles
+      .distinct() // Ensure unique titles
+      .collect()  // Collect the titles into an array
+      .toSet      // Convert to a Set of titles
 
-    // Identifica i 3 utenti più simili
-    val topSimilarUserIds = topUsersWithSimilarity.take(3).map(_._1).toSet
 
-    println("Top 3 similar users:")
-    topUsersWithSimilarity.take(3).foreach(println)
+    // Use higher-order function for filtering and mapping final recommendations
+    def filterAndMap[T: ClassTag](rdd: RDD[(Int, String, String)],
+                                  filterFunc: ((Int, String, String)) => Boolean,
+                                  mapFunc: ((Int, String, String)) => T): RDD[T] = {
+      rdd.filter(filterFunc).map(mapFunc)
+    }
 
-    // Filtra e mappa i giochi consigliati escludendo quelli già giocati dall'utente target
-    val recommendedGames = mergedRdd
-      .filter { case (_, gameTitle, user) =>
-        topSimilarUserIds.contains(user) && !titlesPlayedByTargetUser.contains(gameTitle)
-      }
-      .map { case (appId, gameTitle, userId) => (appId, (gameTitle, userId)) }
+    val userIdsToFind = topUsersXSimilarity.take(3).map(_._1).toSet
 
-    // Aggiungi i titoli dei giochi tramite join con gamesData
-    val recommendationsWithTitle = recommendedGames
-      .join(gamesData)
-      .map { case (appId, ((_, userId), title)) => (appId, title, userId) }
+    /*
+    Top 3 similar users
+(8971360,0.88100129281368)
+(9911449,0.8785642563919683)
+(11277999,0.8678767593227635)
+     */
 
-    // Raggruppa le raccomandazioni per appId e aggrega gli userId
-    val groupedRecommendations = recommendationsWithTitle
-      .map { case (appId, title, userId) => (appId, (title, userId)) }
-      .reduceByKey { case ((title, userId1), (_, userId2)) =>
-        val userIds = Set(userId1, userId2).mkString(",") // Evita duplicati negli userId
-        (title, userIds)
+    val finalRecommendations = filterAndMap(mergedRdd,
+      { case (_, tag, user) => userIdsToFind.contains(user) && !titlesPlayedByTargetUser.contains(tag)},
+      { case (appId, tag, user) => (appId, tag, user) })
+
+    // Step 2: Prepare finalRecommendations by mapping the appId to the title
+    val finalRecommendationsWithTitle = finalRecommendations
+      .map { case (appId, tags, userId) => (appId, (tags, userId)) }  // Prepare for join
+      .join(gamesData)  // Join with the RDD containing (appId, title)
+      .map { case (appId, ((_, userId), title)) => (appId, title, userId) } // Replace tags with title
+
+    val groupedRecommendations = finalRecommendationsWithTitle
+      .map { case (appId, title, userId) => (appId, (title, userId)) }  // Prepare for grouping
+      .reduceByKey { case ((title1, userId1), (_, userId2)) =>
+        // Assuming title is the same for all records with the same appId
+        val title = title1 // or title2, both are the same
+        val userIds = Set(userId1, userId2).mkString(",") // Use a Set to avoid duplicates
+        (title, userIds)  // This maintains userIds as a Set
       }
       .map { case (appId, (title, userIds)) =>
-        (appId, title, userIds)
+        (appId, title, userIds)  // Return as (appId, title, comma-separated userIds)
       }
 
-    // Stampa le raccomandazioni finali
     groupedRecommendations.collect().foreach { case (_, title, userIds) =>
       println(s"userId: $userIds, title: $title")
     }
   }
+
+
 }
+/*
+Execution time(preprocessing): 4669ms
+Execution time(Tf-Idf calculation): 171363ms
+Execution time(Cosine similarity calculation): 126298ms
+Execution time(final recommendation): 7548ms
+Execution time(total): 309878ms
+
+
+Elapsed time for Preprocessing Data:	4164ms (4164205542ns)
+Elapsed time for Calculating TF-IDF:	198220ms (198220372000ns)
+Elapsed time for Getting Similar Users:	134354ms (134354478125ns)
+Elapsed time for Generating Recommendations:	9320ms (9320373250ns)
+
+
+Execution time(preprocessing): 4164ms
+Execution time(Tf-Idf calculation): 198220ms
+Execution time(Cosine similarity calculation): 134355ms
+Execution time(final recommendation): 9323ms
+Execution time(total): 346063ms
+
+ */

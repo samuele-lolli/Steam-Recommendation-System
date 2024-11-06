@@ -13,27 +13,27 @@ class mllibRecommendation (spark: SparkSession, dataPathRec: String, dataPathGam
   def recommend(targetUser: Int): Unit = {
     // Time the preprocessing of data
     println("Preprocessing data...")
-    val (aggregateData, merged) = timeUtils.time(preprocessData(), "Preprocessing Data")
+    val (aggregateData, merged) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
     /*
      Elapsed time for Preprocessing Data:	1906ms (1906329958ns)
      */
 
     // Time the TF-IDF calculation
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(aggregateData), "Calculating TF-IDF")
+    val tfidfValues = timeUtils.time(calculateTFIDF(aggregateData), "Calculating TF-IDF", "MlLib")
     /*
     Elapsed time for Calculating TF-IDF:	214227ms (214227165458ns)
      */
 
     // Time the similarity computation
     println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users")
+    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "MlLib")
     /*
     Elapsed time for Getting Similar Users:	8360ms (8360099334ns)
     */
     // Time the recommendation generation
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(merged, topUsersSimilarity, targetUser), "Generating Recommendations")
+    timeUtils.time(getFinalRecommendations(merged, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
     /*
     Elapsed time for Generating Recommendations:	12281ms (12281858959ns)
      */

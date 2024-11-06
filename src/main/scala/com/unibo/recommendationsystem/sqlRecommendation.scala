@@ -9,23 +9,25 @@ import scala.collection.Map
 
 class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames: String, metadataPath: String) {
 
-  private val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(dataPathRec).filter("is_recommended = true")
-  private val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(dataPathGames)
-  private val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(metadataPath)
 
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
     //Elapsed time for Preprocessing Data:	1495ms (1495704000ns)
-    val (explodedDF, filteredData) = timeUtils.time(preprocessData(), "Preprocessing Data")
+    val (explodedDF, filteredData, gamesTitles, cleanMerge) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL")
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF")
+    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL")
     println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users")
+    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL")
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser), "Generating Recommendations")
+    timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, cleanMerge), "Generating Recommendations", "SQL")
   }
 
-  private def preprocessData(): (DataFrame, DataFrame) = {
+  private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
+
+    val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(dataPathRec).filter("is_recommended = true")
+    val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(dataPathGames)
+    val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(metadataPath)
+
     val selectedRec = dfRec.select("app_id", "user_id")
     val selectedGames = dfGames.select("app_id", "title")
 
@@ -50,7 +52,9 @@ class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames
     val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
       .persist(StorageLevel.MEMORY_AND_DISK)
 
-    (explodedDF, filteredData)
+    val gamesTitles = dfGames.select("app_id", "title")
+
+    (explodedDF, filteredData, gamesTitles, cleanMerge)
   }
 
   private def calculateTFIDF(explodedDF: DataFrame, filteredData: DataFrame): DataFrame = {
@@ -81,7 +85,7 @@ class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames
     tfidfDF
   }
 
-  def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): DataFrame = {
+  def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
     // Define the cosine similarity function
     def calculateCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double], dotProductFunc: (Map[String, Double], Map[String, Double]) => Double, magnitudeFunc: Map[String, Double] => Double): Double = {
       val magnitude1 = magnitudeFunc(vector1)
@@ -133,14 +137,9 @@ class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames
     // Step 3: Get the top 3 users with highest cosine similarity
     val top3Users = otherUsersWithSimilarity.orderBy(desc("cosine_similarity")).limit(3)
 
-    val top3UsersList = top3Users.collect()
+    val topSimilarUsers = top3Users.select("user_id").collect().map(row => row.getAs[Int]("user_id")).toList
 
-    // Print top 3 users with their cosine similarity scores
-    println("Top 3 users with highest cosine similarity:")
-    top3UsersList.foreach(row =>
-      println(s"userId: ${row.getAs[Int]("user_id")}, cosine similarity: ${row.getAs[Double]("cosine_similarity")}")
-    )
-    top3Users
+    topSimilarUsers
   }
 
   /*
@@ -152,14 +151,13 @@ userId: 9911449, cosine similarity: 0.8421752054744202
 Elapsed time for Getting Similar Users:	533863ms (533863187600ns)
   */
 
-  def getFinalRecommendations(top3Users: DataFrame, targetUser: Int): Unit = {
-    val topSimilarUsers = top3Users.select("user_id").collect().map(row => row.getAs[Int]("user_id")).toList
+  def getFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, cleanMerge: DataFrame) = {
 
-    val gamesByTopUsers = dfRec.filter(col("user_id").isin(topSimilarUsers: _*))  // Use : _* to expand the list
+    val gamesByTopUsers = cleanMerge.filter(col("user_id").isin(top3Users: _*))  // Use : _* to expand the list
       .select("app_id", "user_id")
 
     // Step 3: Fetch the games played by the target user
-    val gamesByTargetUser = dfRec.filter(col("user_id") === targetUser)
+    val gamesByTargetUser = cleanMerge.filter(col("user_id") === targetUser)
       .select("app_id")
 
     // Step 4: Exclude the games played by the target user from the games played by the similar users
@@ -167,7 +165,7 @@ Elapsed time for Getting Similar Users:	533863ms (533863187600ns)
 
     // Step 5: Join with dfGames to get the titles of the recommended games
     val finalRecommendations = recommendedGames
-      .join(dfGames.select("app_id", "title"), Seq("app_id"))
+      .join(gamesTitles.select("app_id", "title"), Seq("app_id"))
       .select("title", "user_id")
 
     // Show the resulting DataFrame with titles and users
