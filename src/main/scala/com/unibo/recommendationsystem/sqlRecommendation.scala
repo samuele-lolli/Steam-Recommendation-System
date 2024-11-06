@@ -114,6 +114,7 @@ class sqlRecommendation (spark: SparkSession, dataPathRec: String, dataPathGames
     val targetUserData = tfidfDF.filter(col("user_id") === targetUser)
       .groupBy("user_id")
       .agg(collect_list(struct("word", "tf_idf")).alias("tags"))
+
     val targetUserVector = targetUserData.collect().headOption.map(rowToTfIdfMap).getOrElse(Map.empty[String, Double])
 
     // Step 2: Calculate cosine similarity with other users
