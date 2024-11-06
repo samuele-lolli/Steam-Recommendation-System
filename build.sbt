@@ -32,6 +32,5 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
   "org.apache.spark" %% "spark-mllib" % sparkVersion,
   "org.apache.spark" %% "spark-streaming" % sparkVersion,
-  "org.scala-lang" % "scala-library" % "2.12.14",
-  "com.google.cloud" % "google-cloud-storage" % "2.40.1"
-)
+  "org.scala-lang" % "scala-library" % "2.12.14")
+

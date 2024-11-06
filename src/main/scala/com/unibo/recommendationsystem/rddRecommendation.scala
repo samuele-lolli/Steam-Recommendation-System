@@ -188,7 +188,7 @@ class rddRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: 
 
     // Step 8: Higher-order function to get similar users
 
-    def getSimilarUsers[T: ClassTag](
+    def getSimilarUsers[T : ClassTag](
                                       targetUser: Int,
                                       tfidfValues: RDD[(String, Map[String, Double])],
                                       similarityFunc: (Map[String, Double], Map[String, Double]) => Double
