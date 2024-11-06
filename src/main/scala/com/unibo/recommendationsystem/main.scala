@@ -14,11 +14,11 @@ object main {
     val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(dataPathGames)
     val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(metadataPath)
 
-    val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-    mllibRecommender.recommend(targetUser = 4893896)
+    //val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+    //mllibRecommender.recommend(targetUser = 4893896)
 
-    val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-    rddRecommender.recommend(targetUser = 4893896)
+   // val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+   // rddRecommender.recommend(targetUser = 4893896)
 
     val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     sqlRecommender.recommend(targetUser = 4893896)

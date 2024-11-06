@@ -10,11 +10,17 @@ enablePlugins(sbtassembly.AssemblyPlugin)
 lazy val root = (project in file("."))
   .settings(
     name := "recommendationsystem",
+
+    mainClass in assembly := Some("com.unibo.recommendationsystem.main"),
+
+    // Configure assembly settings
+    assembly / assemblyJarName := "recommendationSystem.jar",
     assemblyMergeStrategy := {
+      case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
       case PathList("META-INF", _*) => MergeStrategy.discard
-      case x => MergeStrategy.first
-    },
-    assembly / assemblyJarName := "recommendationSystem.jar"
+      case "reference.conf" => MergeStrategy.concat
+      case _ => MergeStrategy.first
+    }
   )
 
 
