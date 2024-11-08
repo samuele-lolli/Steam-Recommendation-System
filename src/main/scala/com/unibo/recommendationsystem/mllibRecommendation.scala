@@ -1,120 +1,107 @@
 package com.unibo.recommendationsystem
 
-import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
+import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.ml.feature.{HashingTF, IDF}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
-import org.apache.spark.sql
-import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
-class mllibRecommendation (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
+class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   def recommend(targetUser: Int): Unit = {
-    // Time the preprocessing of data
     println("Preprocessing data...")
     val (aggregateData, merged) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
-    /*
-     Elapsed time for Preprocessing Data:	1906ms (1906329958ns)
-     */
 
-    // Time the TF-IDF calculation
     println("Calculate term frequency and inverse document frequency...")
     val tfidfValues = timeUtils.time(calculateTFIDF(aggregateData), "Calculating TF-IDF", "MlLib")
-    /*
-    Elapsed time for Calculating TF-IDF:	214227ms (214227165458ns)
-     */
 
-    // Time the similarity computation
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "MlLib")
 
-
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(merged, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
-
-   // timeUtils.flushLogsToGCS(spark)
-
-
+    timeUtils.time(generateFinalRecommendations(merged, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
   }
 
-
-  def preprocessData(): (DataFrame, DataFrame) = {
-
+  private def preprocessData(): (DataFrame, DataFrame) = {
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
 
-    val merged = selectedRec.join(selectedGames, Seq("app_id"))
+    val merged = selectedRec
+      .join(selectedGames, Seq("app_id"))
       .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
-    val cleanMerge = merged.withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
+    val cleanMerge = merged
+      .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
-      .persist(StorageLevel.MEMORY_AND_DISK)
-
+      .cache()
 
     val tokenizedData = cleanMerge.withColumn("words", split(col("tagsString"), ","))
 
-    // Aggregate data
-    val aggregateData = tokenizedData.groupBy("user_id").agg(flatten(collect_list("words")).as("words")).persist(StorageLevel.MEMORY_AND_DISK)
+    val aggregateData = tokenizedData
+      .groupBy("user_id")
+      .agg(flatten(collect_list("words")).as("words"))
+      .cache()
 
     (aggregateData, cleanMerge)
   }
 
-  def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
-    // Convert words to feature vectors using HashingTF and IDF
+  private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
     val hashingTF = new HashingTF().setInputCol("words").setOutputCol("hashedFeatures").setNumFeatures(20000)
     val featurizedData = hashingTF.transform(aggregateData).persist(StorageLevel.MEMORY_AND_DISK)
 
     val idf = new IDF().setInputCol("hashedFeatures").setOutputCol("features")
     val idfModel = idf.fit(featurizedData)
-    val rescaledData = idfModel.transform(featurizedData)
-
-    rescaledData
+    idfModel.transform(featurizedData)
   }
 
-  def computeCosineSimilarity(rescaledData: DataFrame, targetUser: Int): DataFrame = {
+  private def computeCosineSimilarity(rescaledData: DataFrame, targetUser: Int): DataFrame = {
     import spark.implicits._
 
-    // UDF to convert sparse vectors to dense vectors for cosine similarity
-    val denseVector = udf { (v: Vector) => Vectors.dense(v.toArray) }
-    val dfWithDenseFeatures = rescaledData.withColumn("dense_features", denseVector(col("features")))
+    val targetUserFeatures = rescaledData
+      .filter($"user_id" === targetUser)
+      .select("features")
+      .first()
+      .getAs[Vector]("features")
 
-    // Target user features
-    val targetUserFeatures = dfWithDenseFeatures.filter($"user_id" === targetUser)
-      .select("features").first().getAs[Vector]("features")
-
-    // Cosine similarity calculation
-    def cosineSimilarity(targetVector: Vector): UserDefinedFunction = udf { (otherVector: Vector) =>
-      val dotProduct = targetVector.dot(otherVector)
-      val normA = Vectors.norm(targetVector, 2)
+    val cosineSimilarity = udf { (otherVector: Vector) =>
+      val dotProduct = targetUserFeatures.dot(otherVector)
+      val normA = Vectors.norm(targetUserFeatures, 2)
       val normB = Vectors.norm(otherVector, 2)
       dotProduct / (normA * normB)
     }
 
-    val usersSimilarity = dfWithDenseFeatures
+    rescaledData
       .filter($"user_id" =!= targetUser)
-      .withColumn("cosine_sim", cosineSimilarity(targetUserFeatures)(col("features")))
+      .withColumn("cosine_sim", cosineSimilarity(col("features")))
       .select("user_id", "cosine_sim")
       .orderBy($"cosine_sim".desc)
       .limit(3)
-
-    usersSimilarity
   }
 
-  def getFinalRecommendations(merged: DataFrame, usersSimilarity: DataFrame, targetUser: Int) = {
+  private def generateFinalRecommendations(merged: DataFrame, usersSimilarity: DataFrame, targetUser: Int): Unit = {
     import spark.implicits._
-    val titlesPlayedByTargetUser = merged.filter($"user_id" === targetUser)
-      .select("tagsString").distinct().as[String].collect()
 
-    val userIdsToFind = usersSimilarity.select("user_id").as[Int].collect.toSet
+    val titlesPlayedByTargetUser = merged
+      .filter($"user_id" === targetUser)
+      .select("tagsString")
+      .distinct()
+      .as[String]
+      .collect()
 
-    val finalRecommendations = merged.filter(col("user_id").isin(userIdsToFind.toArray: _*) && !col("title").isin(titlesPlayedByTargetUser: _*))
+    val userIdsToFind = usersSimilarity
+      .select("user_id")
+      .as[Int]
+      .collect()
+      .toSet
+
+    val finalRecommendations = merged
+      .filter(col("user_id").isin(userIdsToFind.toSeq: _*) && !col("title").isin(titlesPlayedByTargetUser: _*))
       .groupBy("app_id", "title")
       .agg(collect_list("user_id").alias("users"))
 
-    finalRecommendations.show(finalRecommendations.count.toInt, truncate = false)
+    finalRecommendations.show(finalRecommendations.count().toInt ,truncate = false)
   }
 }
