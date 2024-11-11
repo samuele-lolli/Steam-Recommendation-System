@@ -1,20 +1,16 @@
 import sbtassembly.AssemblyPlugin.autoImport.assembly
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
-
 ThisBuild / scalaVersion := "2.12.14"
 
 enablePlugins(sbtassembly.AssemblyPlugin)
 
-
+val sparkVersion = "3.3.2"
 
 lazy val root = (project in file("."))
   .settings(
     name := "recommendationsystem",
-
     mainClass in assembly := Some("com.unibo.recommendationsystem.main"),
-
-    // Configure assembly settings
     assembly / assemblyJarName := "recommendationSystem.jar",
     assemblyMergeStrategy := {
       case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
@@ -23,9 +19,6 @@ lazy val root = (project in file("."))
       case _ => MergeStrategy.first
     }
   )
-
-
-val sparkVersion = "3.3.2"
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
