@@ -47,7 +47,7 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
 
   private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
     val hashingTF = new HashingTF().setInputCol("words").setOutputCol("hashedFeatures").setNumFeatures(20000)
-    val featurizedData = hashingTF.transform(aggregateData).persist(StorageLevel.MEMORY_AND_DISK)
+    val featurizedData = hashingTF.transform(aggregateData).cache()
 
     val idf = new IDF().setInputCol("hashedFeatures").setOutputCol("features")
     val idfModel = idf.fit(featurizedData)

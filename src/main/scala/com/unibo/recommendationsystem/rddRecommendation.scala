@@ -9,13 +9,10 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
     val (mergedRdd, explodedRDD, gamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "RDD")
-
     println("Calculate term frequency and inverse document frequency...")
     val tfidfValues = timeUtils.time(calculateTFIDF(explodedRDD), "Calculating TF-IDF", "RDD")
-
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(targetUser, tfidfValues), "Getting Similar Users", "RDD")
-
     println("Calculate final recommendation...")
     timeUtils.time(generateFinalRecommendations(mergedRdd, topUsersSimilarity, gamesData, targetUser), "Generating Recommendations", "RDD")
   }
