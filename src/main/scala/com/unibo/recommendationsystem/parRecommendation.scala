@@ -116,15 +116,11 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     }
 
     val targetVector = tfidf.getOrElse(targetUser, Map.empty)
-    val topTenUsers = tfidf.view.filter { case (key, _) => key != targetUser }
+    tfidf.view.filter { case (key, _) => key != targetUser }
       .mapValues(cosineSimilarity(targetVector, _))
       .toList.sortBy(-_._2)
-      .take(10)
+      .take(3)
       .map(_._1)
-
-    topTenUsers.foreach(println)
-    println("Top 10 users Par")
-
     /*
     tfidf.view.par
       .filter { case (key, _) => key != targetUser }
@@ -134,7 +130,6 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       .take(3)
       .map(_._1)
      */
-    topTenUsers
   }
 
   /**

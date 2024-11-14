@@ -97,17 +97,12 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       (userId, cosineSimilarity)
     }.toDF("user_id", "cosine_similarity")
 
-    val debug = otherUsersWithSimilarity.orderBy(desc("cosine_similarity"))
+    otherUsersWithSimilarity.orderBy(desc("cosine_similarity"))
       .limit(3)
       .select("user_id")
       .as[Int]
       .collect()
       .toList
-
-    debug.foreach(println)
-    println("top 10 users sql")
-
-    debug
   }
 
   private def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, cleanMerge: DataFrame): Unit = {

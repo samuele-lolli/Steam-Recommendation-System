@@ -70,16 +70,14 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
       dotProduct / (normA * normB)
     }
 
-    val debug = rescaledData
+
+    rescaledData
       .filter($"user_id" =!= targetUser)
       .withColumn("cosine_sim", cosineSimilarity(col("features")))
       .select("user_id", "cosine_sim")
       .orderBy($"cosine_sim".desc)
       .limit(3)
 
-    debug.take(3).foreach(println)
-
-    debug
   }
 
   private def generateFinalRecommendations(merged: DataFrame, usersSimilarity: DataFrame, targetUser: Int): Unit = {

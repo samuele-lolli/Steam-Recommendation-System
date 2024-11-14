@@ -93,19 +93,14 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
     val targetUserGames = tfidfValues.filter(_._1 == targetUser.toString).map(_._2).collect().headOption
 
-    val topTenUsers = targetUserGames.map { targetVector =>
+    targetUserGames.map { targetVector =>
       tfidfValues
         .filter(_._1 != targetUser.toString)
         .map { case (userId, vector) => (userId, cosineSimilarity(targetVector, vector)) }
         .collect()
         .sortBy(-_._2)
-        .take(10)
+        .take(3)
     }.getOrElse(Array.empty)
-
-    topTenUsers.foreach(println)
-    println("top 10 users Rdd")
-
-    topTenUsers
   }
 
   private def generateFinalRecommendations(
