@@ -25,12 +25,14 @@ object dataUtils {
 
       saveFilteredDataset(dfGames, appIds, outputDir, "games_f.csv", "app_id", "append")
 
-      val convertMetadata = dfMetadata.select(dfMetadata.columns.map {
+      /*val convertMetadata = dfMetadata.select(dfMetadata.columns.map {
         case colName if dfMetadata.schema(colName).dataType.typeName == "array" =>
           concat_ws(",", dfMetadata(colName)).alias(colName) // Join array elements with a comma or other delimiter
         case colName => dfMetadata(colName)
       }: _*)
-      saveFilteredDataset(convertMetadata, appIds, outputDir, "games_metadata_f.csv", "app_id", "append")
+       */
+
+      saveFilteredDataset(dfMetadata, appIds, outputDir, "games_metadata_f.json", "app_id", "append")
 
       targetUser
     } else {
@@ -59,12 +61,13 @@ object dataUtils {
   def filterUsersWithReviews(dfUsers: DataFrame): (List[Int], Int) = {
     println("Enter the minimum number of reviews:")
     val minReviews = StdIn.readInt()
-
+    timeUtils.saveUserInput("MinReviews: " + minReviews.toString)
     println("Enter the number of users to select:")
     val maxUsers = StdIn.readInt()
-
+    timeUtils.saveUserInput("N.Users: " + maxUsers.toString)
     println("Enter the target user ID:")
     val targetUser = StdIn.readLine()
+    timeUtils.saveUserInput("TargetUser: " + targetUser)
 
     val filteredUsers = dfUsers.filter(col("reviews") >= minReviews).select("user_id")
 
@@ -91,6 +94,27 @@ object dataUtils {
     dfRecFiltered.select("app_id").distinct().collect().map(_.getInt(0)).toList
   }
 
+
+
+  /**
+   * Combines filtering, saving as CSV, deleting .crc files, and renaming the output file.
+   *
+   * @param dfToFilter DataFrame to filter.
+   * @param keysId List of user IDs to filter by.
+   * @param outputDir Directory to save the CSV file.
+   * @param targetFileName Desired filename for the final CSV file.
+   */
+  def saveFilteredDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, targetFileName: String, filterColumn: String, mode: String): Unit = {
+    // Filter and save the dataset
+    filterAndSaveDataset(dfToFilter, keysId, outputDir, filterColumn, mode, targetFileName)
+    renamePartFile(outputDir, targetFileName)
+
+    // Delete any .crc files
+    deleteCRCFiles(outputDir)
+
+    // Rename the part file to the target file name
+  }
+
   /**
    * Filters a DataFrame by a list of user IDs and saves it as a single CSV file.
    *
@@ -98,9 +122,62 @@ object dataUtils {
    * @param keysId List of key IDs to filter by.
    * @param outputDir Directory to save the filtered CSV file.
    */
-  def filterAndSaveDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, filterColumn: String, mode: String): Unit = {
+  def filterAndSaveDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, filterColumn: String, mode: String, targetFileName: String): Unit = {
     val dfFiltered = dfToFilter.filter(col(filterColumn).isin(keysId: _*))
-    saveAsSingleCSV(dfFiltered, outputDir, mode)
+    if(targetFileName.contains("metadata")) {
+      saveAsSingleJSON(dfFiltered,outputDir, mode)
+    } else {
+      saveAsSingleCSV(dfFiltered, outputDir, mode)
+    }
+  }
+
+
+  /**
+   * Renames the part file in the specified directory to a target filename.
+   *
+   * @param dirPath Path to the directory.
+   * @param targetFileName Desired filename for the file.
+   */
+  def renamePartFile(dirPath: String, targetFileName: String): Unit = {
+    val path = Paths.get(dirPath)
+
+    // Check the file extension in targetFileName to determine whether to search for a `.csv` or `.json` part file
+    val partFile = if (targetFileName.endsWith(".json")) {
+      // If the target file is a .json, search for a .json part file
+      Files.list(path)
+        .iterator()
+        .asScala
+        .find(p => p.getFileName.toString.startsWith("part-") && p.getFileName.toString.endsWith(".json"))
+    } else {
+      // Otherwise, search for a .csv part file
+      Files.list(path)
+        .iterator()
+        .asScala
+        .find(p => p.getFileName.toString.startsWith("part-") && p.getFileName.toString.endsWith(".csv"))
+    }
+
+    partFile match {
+      case Some(p) =>
+        // Resolve the target path for the new file name and move the file
+        val targetPath = path.resolveSibling("filteredDataset/" + targetFileName)
+        Files.move(p, targetPath, StandardCopyOption.REPLACE_EXISTING)
+        println(s"File renamed to $targetFileName")
+      case None =>
+        println("No part file found to rename.")
+    }
+  }
+
+  /**
+   * Deletes all .crc files in the specified directory.
+   *
+   * @param dirPath Path to the directory.
+   */
+  def deleteCRCFiles(dirPath: String): Unit = {
+    Files.walk(Paths.get(dirPath))
+      .iterator()
+      .asScala
+      .filter(path => path.toString.endsWith(".crc"))
+      .foreach(Files.delete)
   }
 
 
@@ -120,59 +197,18 @@ object dataUtils {
       .save(outputDir)
   }
 
-  /**
-   * Deletes all .crc files in the specified directory.
-   *
-   * @param dirPath Path to the directory.
-   */
-  def deleteCRCFiles(dirPath: String): Unit = {
-    Files.walk(Paths.get(dirPath))
-      .iterator()
-      .asScala
-      .filter(path => path.toString.endsWith(".crc"))
-      .foreach(Files.delete)
+  def saveAsSingleJSON(df: DataFrame, outputDir: String, mode: String): Unit = {
+    df.coalesce(1) // Reduces the DataFrame to a single partition, so output is a single file
+      .write
+      .format("json")
+      .mode(mode)
+      .save(outputDir)
   }
 
-  /**
-   * Renames the part file in the specified directory to a target filename.
-   *
-   * @param dirPath Path to the directory.
-   * @param targetFileName Desired filename for the CSV file.
-   */
-  def renamePartFile(dirPath: String, targetFileName: String): Unit = {
-    val path = Paths.get(dirPath)
-    val partFile = Files.list(path)
-      .iterator()
-      .asScala
-      .find(p => p.getFileName.toString.startsWith("part-") && p.getFileName.toString.endsWith(".csv"))
 
-    partFile match {
-      case Some(p) =>
-        val targetPath = path.resolveSibling("filteredDataset/"+targetFileName)
-        Files.move(p, targetPath, StandardCopyOption.REPLACE_EXISTING)
-        println(s"File renamed to $targetFileName")
-      case None =>
-        println("No part file found to rename.")
-    }
-  }
 
-  /**
-   * Combines filtering, saving as CSV, deleting .crc files, and renaming the output file.
-   *
-   * @param dfToFilter DataFrame to filter.
-   * @param keysId List of user IDs to filter by.
-   * @param outputDir Directory to save the CSV file.
-   * @param targetFileName Desired filename for the final CSV file.
-   */
-  def saveFilteredDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, targetFileName: String, filterColumn: String, mode: String): Unit = {
-    // Filter and save the dataset
-    filterAndSaveDataset(dfToFilter, keysId, outputDir, filterColumn, mode)
-    renamePartFile(outputDir, targetFileName)
 
-    // Delete any .crc files
-    deleteCRCFiles(outputDir)
 
-    // Rename the part file to the target file name
-  }
+
 
 }

@@ -1,5 +1,7 @@
 package com.unibo.recommendationsystem.utils
 
+import org.sparkproject.dmg.pmml.True
+
 import java.io.{FileWriter, PrintWriter}
 
 object timeUtils {
@@ -14,6 +16,11 @@ object timeUtils {
       writer.close()
     }
   }
+
+  def saveUserInput(message: String) : Unit = {
+      logToFile("Input: " + message)
+  }
+
 
   def time[R](block: => R, operation: String = "unknown", className: String = "UnknownClass"): R = {
     val t0 = System.nanoTime()

@@ -27,6 +27,8 @@ lazy val root = (project in file("."))
 
 val sparkVersion = "3.3.2"
 
+libraryDependencies += "com.typesafe.play" %% "play-json" % "2.9.2"
+
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
@@ -34,4 +36,5 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-mllib" % sparkVersion,
   "org.apache.spark" %% "spark-streaming" % sparkVersion,
   "org.scala-lang" % "scala-library" % "2.12.14",
+
 )

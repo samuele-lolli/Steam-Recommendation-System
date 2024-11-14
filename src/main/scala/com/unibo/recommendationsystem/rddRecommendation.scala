@@ -21,16 +21,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val selectedRecRDD = dataRec.rdd.map(row => (row.getInt(0), row.getInt(6).toString))
 
     val tags = metadata.rdd
-      .map(row => {
-        // Check if the first column is null before converting to Int
-        val appId = Option(row.getInt(0)).getOrElse(-1)  // Default value -1 for invalid app_id
-        // Check if the tags list is null
-        val tagList = Option(row.getList(2)) match {
-          case Some(tags) => tags.toArray.map(_.toString).mkString(",").toLowerCase.replaceAll("\\s+", " ")
-          case None => ""  // Default to empty string if tags are null
-        }
-        (appId, tagList)
-      })
+      .map(row => (row.getInt(0), row.getList(2).toArray.map(_.toString).mkString(",").toLowerCase.replaceAll("\\s+", " ")))
       .collect()
       .toMap
 /*
@@ -40,9 +31,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .toMap
 
  */
-
-
-
     val broadcastTagMap = spark.sparkContext.broadcast(tags)
 
     val mergedRDD = selectedRecRDD.map { case (appId, userId) =>
@@ -105,14 +93,19 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
     val targetUserGames = tfidfValues.filter(_._1 == targetUser.toString).map(_._2).collect().headOption
 
-    targetUserGames.map { targetVector =>
+    val topTenUsers = targetUserGames.map { targetVector =>
       tfidfValues
         .filter(_._1 != targetUser.toString)
         .map { case (userId, vector) => (userId, cosineSimilarity(targetVector, vector)) }
         .collect()
         .sortBy(-_._2)
-        .take(3)
+        .take(10)
     }.getOrElse(Array.empty)
+
+    topTenUsers.foreach(println)
+    println("top 10 users Rdd")
+
+    topTenUsers
   }
 
   private def generateFinalRecommendations(

@@ -1,6 +1,8 @@
 package com.unibo.recommendationsystem
 
 import com.unibo.recommendationsystem.utils.timeUtils
+import org.json4s.jackson.JsonMethods
+import org.json4s.{DefaultFormats, Formats}
 
 import scala.io.Source
 import scala.math.log
@@ -23,8 +25,6 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "par")
     println("Calculate final recommendation...")
     timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser, merged), "Generating Recommendations", "par")
-
-    //timeUtils.flushLogsToGCS(spark)
   }
 
 
@@ -38,14 +38,25 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     dataGames = loadDataGames(dataGamesPath)
     metadata = loadMetadata(metadataPath)
 
-    val merged = dataRec.flatMap { case (userId, appIds) => //.par before flatmap?
-      appIds.flatMap { appId =>
-        for {
-          title <- dataGames.get(appId)
-          tags <- metadata.get(appId)
-        } yield (userId, appId, title, tags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
-      }
-    }.toList
+    /*val merged = dataRec.toList.collect {
+      case (userId, appIds) =>
+        appIds.flatMap { appId =>
+          for {
+            title <- dataGames.get(appId)
+            tags <- metadata.get(appId)
+          } yield (userId, appId, title, tags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
+        }
+    }.flatten*/
+
+    val merged = dataRec.flatMap { case (userId, appIds) =>
+  appIds.flatMap { appId =>
+    for {
+      title <- dataGames.get(appId)
+      tags <- metadata.get(appId)
+    } yield (userId, appId, title, tags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
+  }
+}.toList
+
 
     // Step 3: Clean and format merged data
     val cleanMerge = merged.map { case (userId, appId, title, tags) =>
@@ -105,11 +116,14 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     }
 
     val targetVector = tfidf.getOrElse(targetUser, Map.empty)
-    tfidf.view.filter { case (key, _) => key != targetUser }
+    val topTenUsers = tfidf.view.filter { case (key, _) => key != targetUser }
       .mapValues(cosineSimilarity(targetVector, _))
       .toList.sortBy(-_._2)
-      .take(3)
+      .take(10)
       .map(_._1)
+
+    topTenUsers.foreach(println)
+    println("Top 10 users Par")
 
     /*
     tfidf.view.par
@@ -120,6 +134,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       .take(3)
       .map(_._1)
      */
+    topTenUsers
   }
 
   /**
@@ -133,8 +148,8 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
         val gameTitle = userGamePairs.head._3
         val userGroups = userGamePairs.groupBy(_._1) // Group users by their ID
         val groupedUsers = userGroups.mapValues(_.map(_._2)) // Extract game IDs for each user
-        println(s"Recommended game: $gameTitle")
         groupedUsers.foreach { case (userId, _) =>
+          println(s"Recommended game: $gameTitle")
           println(s"  - Recommended by user $userId")
         }
       }
@@ -177,25 +192,20 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   }
 
   def loadMetadata(path: String): Map[Int, Array[String]] = {
-    // Mutable map to accumulate app IDs and tags
-    val appIdsAndTags = collection.mutable.Map[Int, Array[String]]()
+    // Read the entire JSON file
+    val source = Source.fromFile(path)
+    implicit val formats: DefaultFormats.type = DefaultFormats
 
-    // Use Using to manage resource and automatically close the source after use
-    Using.resource(Source.fromFile(path)) { source =>
-      for (line <- source.getLines().drop(1)) { // Skip the header line if present
-        val splitLine = line.split(",").map(_.trim)  // Split by comma and trim whitespace
-
-        // Parse app ID and tags
-        val appId = splitLine(0).toInt              // Convert app_id to Int
-        val tags = splitLine(2).split(",").map(_.trim) // Split tags by comma into Array[String]
-
-        // Update the map with appId and tags array
-        appIdsAndTags.update(appId, tags)
-      }
+    val appIdsAndTags = source.getLines().foldLeft(Map.empty[Int, Array[String]]) {
+      case (acc, line) =>
+        val json = JsonMethods.parse(line)
+        val appId = (json \ "app_id").extract[Int]
+        val tags = (json \ "tags").extract[Seq[String]].toArray  // Convert tags to Array[String]
+        acc + (appId -> tags)  // Add appId and tags to the accumulator map
     }
 
-    // Convert to an immutable Map[Int, Array[String]]
-    appIdsAndTags.toMap
+    source.close()
+    appIdsAndTags
   }
 
 
