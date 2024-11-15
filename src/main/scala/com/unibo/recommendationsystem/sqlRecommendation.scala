@@ -62,9 +62,17 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
     val idfDF = dfDF.withColumn("idf", log(lit(totalDocs) / col("document_frequency")))
 
-    tf.join(idfDF, "word")
+    val tfidfValues = tf.join(idfDF, "word")
       .withColumn("tf_idf", col("term_frequency") * col("idf"))
       .select("user_id", "word", "tf_idf")
+
+    val user4893896Tfidf = tfidfValues.filter(col("user_id") === "4893896")
+      .select("word", "tf_idf")
+      .collect()
+
+    user4893896Tfidf.foreach(row => println(s"${row.getString(0)}: ${row.getDouble(1)}"))
+
+    tfidfValues
   }
 
   private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
