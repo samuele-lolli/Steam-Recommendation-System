@@ -11,7 +11,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val (mergedRdd, explodedRDD, gamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "RDD")
     println("Calculate term frequency and inverse document frequency...")
     val tfidfValues = timeUtils.time(calculateTFIDF(explodedRDD), "Calculating TF-IDF", "RDD")
-    tfidfValues.filter(_._1 == "4893896").foreach(println)
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(targetUser, tfidfValues), "Getting Similar Users", "RDD")
     println("Calculate final recommendation...")
@@ -37,7 +36,8 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val mergedRDD = selectedRecRDD.map { case (appId, userId) =>
       val tag = broadcastTagMap.value.getOrElse(appId, "")
       (appId, tag, userId)
-    }.filter(_._2.nonEmpty).cache()
+    }.filter(_._2.nonEmpty) //
+      .cache()
 
     val aggregateDataRDD = mergedRDD
       .map { case (_, tag, user) => (user, tag.split(",")) }
@@ -45,9 +45,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .filter(_._2.length > 0)
 
     val explodedRDD = aggregateDataRDD.flatMap { case (userId, words) => words.map(word => (userId, word)) }
-    val valuesFor4893896 = explodedRDD.filter(_._1 == "4893896").map(_._2).collect()
-    valuesFor4893896.foreach(println)
-    println("explodedRDD")
 
     val gamesTitlesRDD = dataGames.rdd.map(row => (row.getAs[Int]("app_id"), row.getAs[String]("title")))
 

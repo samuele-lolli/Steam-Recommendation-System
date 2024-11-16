@@ -25,7 +25,7 @@ object main {
 
     var basePath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/"
 
-    var dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true")//.sample(withReplacement = false, fraction = 0.35)
+    var dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35)
     var dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
     var dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
     val dfUsers = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.usersSchema).load(basePath + "users.csv")
@@ -33,29 +33,36 @@ object main {
     //LOCAL
     //4893896
     val targetUser = createCustomDatasets(sparkLocal, dfRec, dfGames, dfMetadata, dfUsers)
+
     if (targetUser != -1) {
       basePath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/filteredDataset/"
-      val parRecommender = new parRecommendation(basePath+"recommendations_f.csv", basePath+"games_f.csv", basePath+"games_metadata_f.json")
+      val parRecommender = new seqRecommendation(basePath+"recommendations_f.csv", basePath+"games_f.csv", basePath+"games_metadata_f.json")
       parRecommender.recommend(targetUser)
 
       //DISTRIBUTED
 
 
-      dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath+"recommendations_f.csv").filter("is_recommended = true")
+      /*dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath+"recommendations_f.csv")
       dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath+"games_f.csv")
-      dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath+"games_metadata_f.json")
+      dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata_f.json")
 
-      /*
-      val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+
+     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
       mllibRecommender.recommend(targetUser)
 
-      */
+
 
       val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
       rddRecommender.recommend(targetUser)
 
-      val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-      sqlRecommender.recommend(targetUser)
+
+      //val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+     // sqlRecommender.recommend(targetUser)
+
+       */
+
+
+
 
 
     } else {
