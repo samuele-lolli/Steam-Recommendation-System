@@ -16,13 +16,12 @@ object dataUtils {
    * @param spark Spark session.
    * @return The ID of the selected target user or -1 if no user is selected.
    */
-  def createCustomDatasets(spark: SparkSession): (Int, String) = {
-    val basePath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/"
+  def createCustomDatasets(spark: SparkSession, basePath: String): (Int, String) = {
     val firstChoice = promptUser("Do you want to use the full datasets or go to the customization menu? (1/2)")
 
     firstChoice match {
       case "1" =>
-        (0, "full")
+        (4893896, "full")
 
       case "2" =>
         val createDatasets = promptUser("Do you want to create a new custom dataset or use a custom dataset already created? (1/2)")
