@@ -9,198 +9,179 @@ import scala.jdk.CollectionConverters._
 import scala.util.Random
 
 object dataUtils {
+  /**
+   * Creates custom datasets for a recommendation system.
+   * Asks the user whether to create new datasets or reuse an existing one.
+   *
+   * @param spark Spark session.
+   * @return The ID of the selected target user or -1 if no user is selected.
+   */
+  def createCustomDatasets(spark: SparkSession): (Int, String) = {
+    val basePath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/"
+    val firstChoice = promptUser("Do you want to use the full datasets or go to the customization menu? (1/2)")
 
-  def createCustomDatasets(spark: SparkSession, dfRec: DataFrame, dfGames: DataFrame, dfMetadata: DataFrame, dfUsers: DataFrame): Int = {
-    println("Do you want to create custom datasets? (y/n)")
-    val createDatasets = StdIn.readLine().toLowerCase
+    firstChoice match {
+      case "1" =>
+        (0, "full")
 
-    if (createDatasets == "y") {
-      val (userIds, targetUser) = filterUsersWithReviews(dfUsers)
-      val outputDir = "steam-dataset/filteredDataset"
-      val targetFileName = "recommendations_f.csv"
-      saveFilteredDataset(dfRec, userIds, outputDir, targetFileName, "user_id", "overwrite")
+      case "2" =>
+        val createDatasets = promptUser("Do you want to create a new custom dataset or use a custom dataset already created? (1/2)")
 
-      val dfRecFiltered = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(outputDir + "/" + targetFileName)
-      val appIds = filterAppIds(dfRecFiltered)
+        val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35)
+        val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
+        val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
+        val dfUsers = spark.read.format("csv").option("header", "true").schema(schemaUtils.usersSchema).load(basePath + "users.csv")
 
-      saveFilteredDataset(dfGames, appIds, outputDir, "games_f.csv", "app_id", "append")
+        createDatasets match {
+          case "1" =>
+            val (userIds, targetUser) = filterUsersWithReviews(dfUsers)
+            val outputDir = "steam-dataset/filteredDataset"
 
-      /*val convertMetadata = dfMetadata.select(dfMetadata.columns.map {
-        case colName if dfMetadata.schema(colName).dataType.typeName == "array" =>
-          concat_ws(",", dfMetadata(colName)).alias(colName) // Join array elements with a comma or other delimiter
-        case colName => dfMetadata(colName)
-      }: _*)
-       */
+            saveFilteredDataset(dfRec, userIds, outputDir, "recommendations_f.csv", "user_id", "overwrite")
+            val dfRecFiltered = readDataset(spark, outputDir + "/recommendations_f.csv", schemaUtils.recSchema)
 
-      saveFilteredDataset(dfMetadata, appIds, outputDir, "games_metadata_f.json", "app_id", "append")
+            val appIds = filterAppIds(dfRecFiltered)
+            saveFilteredDataset(dfGames, appIds, outputDir, "games_f.csv", "app_id", "append")
+            saveFilteredDataset(dfMetadata, appIds, outputDir, "games_metadata_f.json", "app_id", "append")
 
-      targetUser
-    } else {
-      println("Do you want to use a custom datasets already created? (y/n)")
-      val reuseDataset = StdIn.readLine().toLowerCase
-      if (reuseDataset == "y") {
-        println("Enter the target user ID:")
-        val targetUser = StdIn.readLine()
+            (targetUser, "custom_new")
 
-        targetUser.toInt
-      } else {
-        println("Skipping custom dataset creation.")
-        -1
-      }
-      // Handle the case where the user chooses not to create datasets
-       // Return a dummy value (e.g., -1) to indicate no creation
+          case "2" =>
+            val targetUser = promptUser("Enter the target user ID:").toInt
+            (targetUser, "custom_exist")
+        }
     }
   }
 
   /**
-   * Filters users with custom reviews and selects up to "n" users.
+   * Filters users who have at least a specified number of reviews.
+   * Also allows selecting a specific target user.
    *
-   * @param dfUsers DataFrame of users with reviews column.
-   * @return List of user IDs that meet the criteria.
+   * @param dfUsers DataFrame containing user information.
+   * @return A tuple with the list of filtered user IDs and the target user ID.
    */
   private def filterUsersWithReviews(dfUsers: DataFrame): (List[Int], Int) = {
-    println("Enter the minimum number of reviews:")
-    val minReviews = StdIn.readInt()
-    timeUtils.saveUserInput("MinReviews: " + minReviews.toString)
-    println("Enter the number of users to select:")
-    val maxUsers = StdIn.readInt()
-    timeUtils.saveUserInput("N.Users: " + maxUsers.toString)
-    println("Enter the target user ID:")
-    val targetUser = StdIn.readLine()
-    timeUtils.saveUserInput("TargetUser: " + targetUser)
+    val minReviews = promptUser("Enter the minimum number of reviews:").toInt
+    val maxUsers = promptUser("Enter the number of users to select:").toInt
+    val targetUser = promptUser("Enter the target user ID:")
+
+    timeUtils.saveUserInput(s"MinReviews: $minReviews")
+    timeUtils.saveUserInput(s"N.Users: $maxUsers")
+    timeUtils.saveUserInput(s"TargetUser: $targetUser")
 
     val filteredUsers = dfUsers.filter(col("reviews") >= minReviews).select("user_id")
-
-    // Limit the number of users and add the target user if necessary
     val userList = if (targetUser.nonEmpty) {
-      filteredUsers.filter(col("user_id") === targetUser.toInt).collect().map(_.getInt(0)).toList ++
-        filteredUsers.filter(col("user_id") =!= targetUser.toInt).limit(maxUsers - 1).collect().map(_.getInt(0)).toList
+      (filteredUsers.filter(col("user_id") === targetUser.toInt).collect().map(_.getInt(0)) ++
+        filteredUsers.filter(col("user_id") =!= targetUser.toInt).limit(maxUsers - 1).collect().map(_.getInt(0))).toList
     } else {
       val allUsers = filteredUsers.limit(maxUsers).collect().map(_.getInt(0)).toList
       val randomIndex = Random.nextInt(allUsers.size)
-      val selectedUser = allUsers(randomIndex)
-      List(selectedUser)
+      List(allUsers(randomIndex))
     }
+
     (userList, targetUser.toInt)
   }
 
   /**
-   * Filters users with at least 10 reviews and selects up to 100 users.
+   * Extracts a list of unique app (game) IDs from the filtered recommendations.
    *
-   * @param dfRecFiltered DataFrame of filtered users with reviews and app_id columns.
-   * @return List of user IDs that meet the criteria.
+   * @param dfRecFiltered Filtered DataFrame containing recommendations.
+   * @return A list of unique app IDs.
    */
   private def filterAppIds(dfRecFiltered: DataFrame): List[Int] = {
     dfRecFiltered.select("app_id").distinct().collect().map(_.getInt(0)).toList
   }
 
-
-
   /**
-   * Combines filtering, saving as CSV, deleting .crc files, and renaming the output file.
+   * Saves a filtered dataset in CSV or JSON format, depending on the specified file name.
    *
-   * @param dfToFilter DataFrame to filter.
-   * @param keysId List of user IDs to filter by.
-   * @param outputDir Directory to save the CSV file.
-   * @param targetFileName Desired filename for the final CSV file.
+   * @param df DataFrame to save.
+   * @param keys List of filter keys.
+   * @param outputDir Output directory for the saved file.
+   * @param fileName Name of the output file.
+   * @param filterColumn Name of the column to apply the filter on.
+   * @param mode Write mode (e.g., "overwrite" or "append").
    */
-  private def saveFilteredDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, targetFileName: String, filterColumn: String, mode: String): Unit = {
-    // Filter and save the dataset
-    filterAndSaveDataset(dfToFilter, keysId, outputDir, filterColumn, mode, targetFileName)
-    renamePartFile(outputDir, targetFileName)
+  private def saveFilteredDataset(df: DataFrame, keys: List[Int], outputDir: String, fileName: String, filterColumn: String, mode: String): Unit = {
+    val dfFiltered = df.filter(col(filterColumn).isin(keys: _*))
+    if (fileName.endsWith(".json")) saveAsSingleFile(dfFiltered, outputDir, "json", mode)
+    else saveAsSingleFile(dfFiltered, outputDir, "csv", mode)
 
-    // Delete any .crc files
     deleteCRCFiles(outputDir)
-
-    // Rename the part file to the target file name
+    renamePartFile(outputDir, fileName)
   }
 
   /**
-   * Filters a DataFrame by a list of user IDs and saves it as a single CSV file.
+   * Saves a DataFrame as a single file in a specified directory, in CSV or JSON format.
    *
-   * @param dfToFilter DataFrame to filter and save.
-   * @param keysId List of key IDs to filter by.
-   * @param outputDir Directory to save the filtered CSV file.
+   * @param df DataFrame to save.
+   * @param outputDir Output directory for the saved file.
+   * @param format Output file format ("csv" or "json").
+   * @param mode Write mode (e.g., "overwrite" or "append").
    */
-  private def filterAndSaveDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, filterColumn: String, mode: String, targetFileName: String): Unit = {
-    val dfFiltered = dfToFilter.filter(col(filterColumn).isin(keysId: _*))
-    if(targetFileName.contains("metadata")) {
-      saveAsSingleJSON(dfFiltered,outputDir, mode)
-    } else {
-      saveAsSingleCSV(dfFiltered, outputDir, mode)
-    }
+  private def saveAsSingleFile(df: DataFrame, outputDir: String, format: String, mode: String): Unit = {
+    df.coalesce(1)
+      .write
+      .format(format)
+      .option("header", format == "csv")
+      .option("delimiter", if (format == "csv") "," else null)
+      .mode(mode)
+      .save(outputDir)
   }
 
-
   /**
-   * Renames the part file in the specified directory to a target filename.
+   * Renames the generated part-* output file to the specified file name.
    *
-   * @param dirPath Path to the directory.
-   * @param targetFileName Desired filename for the file.
+   * @param outputDir Directory containing the part-* file.
+   * @param targetFileName Final name to assign to the file.
    */
-  private def renamePartFile(dirPath: String, targetFileName: String): Unit = {
-    val path = Paths.get(dirPath)
+  private def renamePartFile(outputDir: String, targetFileName: String): Unit = {
+    val path = Paths.get(outputDir)
+    val extension = if (targetFileName.endsWith(".json")) ".json" else ".csv"
 
-    // Check the file extension in targetFileName to determine whether to search for a `.csv` or `.json` part file
-    val partFile = if (targetFileName.endsWith(".json")) {
-      // If the target file is a .json, search for a .json part file
-      Files.list(path)
-        .iterator()
-        .asScala
-        .find(p => p.getFileName.toString.startsWith("part-") && p.getFileName.toString.endsWith(".json"))
-    } else {
-      // Otherwise, search for a .csv part file
-      Files.list(path)
-        .iterator()
-        .asScala
-        .find(p => p.getFileName.toString.startsWith("part-") && p.getFileName.toString.endsWith(".csv"))
-    }
-
-    partFile match {
-      case Some(p) =>
-        // Resolve the target path for the new file name and move the file
-        val targetPath = path.resolveSibling("filteredDataset/" + targetFileName)
-        Files.move(p, targetPath, StandardCopyOption.REPLACE_EXISTING)
+    Files.list(path)
+      .iterator()
+      .asScala
+      .find(p => p.getFileName.toString.startsWith("part-") && p.getFileName.toString.endsWith(extension))
+      .foreach { partFile =>
+        Files.move(partFile, path.resolve(targetFileName), StandardCopyOption.REPLACE_EXISTING)
         println(s"File renamed to $targetFileName")
-      case None =>
-        println("No part file found to rename.")
-    }
+      }
   }
 
   /**
-   * Deletes all .crc files in the specified directory.
+   * Deletes .crc checksum files in the specified directory.
    *
-   * @param dirPath Path to the directory.
+   * @param dirPath Path to the directory where .crc files are located.
    */
   private def deleteCRCFiles(dirPath: String): Unit = {
     Files.walk(Paths.get(dirPath))
       .iterator()
       .asScala
-      .filter(path => path.toString.endsWith(".crc"))
+      .filter(_.toString.endsWith(".crc"))
       .foreach(Files.delete)
   }
 
   /**
-   * Saves a DataFrame as a single CSV file in the specified directory.
+   * Reads a CSV dataset with the specified schema.
    *
-   * @param df DataFrame to save.
-   * @param outputDir Directory to save the CSV file.
+   * @param spark Spark session.
+   * @param path Path to the CSV file.
+   * @param schema Schema to apply while reading the dataset.
+   * @return Resulting DataFrame.
    */
-  private def saveAsSingleCSV(df: DataFrame, outputDir: String, mode: String): Unit = {
-    df.coalesce(1)
-      .write
-      .format("csv")
-      .option("header", "true")
-      .option("delimiter", ",")
-      .mode(mode)
-      .save(outputDir)
+  private def readDataset(spark: SparkSession, path: String, schema: org.apache.spark.sql.types.StructType): DataFrame = {
+    spark.read.format("csv").option("header", "true").schema(schema).load(path)
   }
 
-  private def saveAsSingleJSON(df: DataFrame, outputDir: String, mode: String): Unit = {
-    df.coalesce(1) // Reduces the DataFrame to a single partition, so output is a single file
-      .write
-      .format("json")
-      .mode(mode)
-      .save(outputDir)
+  /**
+   * Displays a message to the user and reads input.
+   *
+   * @param message Message to display.
+   * @return User input as a lowercase trimmed string.
+   */
+  private def promptUser(message: String): String = {
+    println(message)
+    StdIn.readLine().trim.toLowerCase
   }
 }
