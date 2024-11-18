@@ -26,7 +26,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarityPar= timeUtils.time(computeCosineSimilarity(tfidfValuesPar, targetUser), "Getting Similar Users", "Par")
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(topUsersSimilarityPar, targetUser, merged), "Generating Recommendations", "Par")
+    timeUtils.time(generateFinalRecommendations(topUsersSimilarityPar, targetUser, merged), "Generating Recommendations", "Par")
   }
 
 
@@ -89,7 +89,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       .groupBy(_._1) // Group by user ID
       .mapValues(_.map(_._2).mkString(",")) // Concatenate all strings for each user
 
-    val idfValues: Map[String, Double] = calculateIDF(groupedUserWords).seq.toMap
+    val idfValues: Map[String, Double] = calculateIDF(groupedUserWords).seq
 
     groupedUserWords
       .map { case (user, words) =>
@@ -121,7 +121,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   topUsers
 }
 
-  private def getFinalRecommendations(topUsers: List[Int], targetUser: Int, cleanMerge: ParSeq[(Int, Int, String, Array[String])]): Unit = {
+  private def generateFinalRecommendations(topUsers: List[Int], targetUser: Int, cleanMerge: ParSeq[(Int, Int, String, Array[String])]): Unit = {
     // Converti cleanMerge in una collezione parallela
     // Step 1: Ottieni tutti i giochi giocati dall'utente target
     val gamesByTargetUser = cleanMerge.filter(_._1 == targetUser)

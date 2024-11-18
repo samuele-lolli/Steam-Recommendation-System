@@ -21,7 +21,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "Seq")
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser, merged), "Generating Recommendations", "Seq")
+    timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, merged), "Generating Recommendations", "Seq")
   }
 
 
@@ -125,7 +125,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   /**
    * Extracts final recommendations based on top similar users.
    */
-  private def getFinalRecommendations(topUsers: List[Int], targetUser: Int, cleanMerge: List[(Int, Int, String, Array[String])]): Unit = {
+  private def generateFinalRecommendations(topUsers: List[Int], targetUser: Int, cleanMerge: List[(Int, Int, String, Array[String])]): Unit = {
     // Step 1: Get all games played by the target user
     val gamesByTargetUser = cleanMerge.filter(_._1 == targetUser).map(_._2).toSet // Convert to Set for faster membership checks
 

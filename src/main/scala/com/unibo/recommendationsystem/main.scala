@@ -1,10 +1,8 @@
 package com.unibo.recommendationsystem
 import com.unibo.recommendationsystem.recommender.{parRecommendation, seqRecommendation}
-import com.unibo.recommendationsystem.utils.dataUtils.{createCustomDatasets, filterAppIds, filterUsersWithReviews, saveFilteredDataset}
+import com.unibo.recommendationsystem.utils.dataUtils.createCustomDatasets
 import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, concat_ws}
-import org.apache.spark.sql.functions._
 
 object main {
   def main(args: Array[String]): Unit = {

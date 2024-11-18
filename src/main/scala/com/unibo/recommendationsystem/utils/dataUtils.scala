@@ -1,7 +1,7 @@
 package com.unibo.recommendationsystem.utils
 
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.{col, concat_ws}
 
 import java.nio.file.{Files, Paths, StandardCopyOption}
 import scala.io.StdIn
@@ -58,7 +58,7 @@ object dataUtils {
    * @param dfUsers DataFrame of users with reviews column.
    * @return List of user IDs that meet the criteria.
    */
-  def filterUsersWithReviews(dfUsers: DataFrame): (List[Int], Int) = {
+  private def filterUsersWithReviews(dfUsers: DataFrame): (List[Int], Int) = {
     println("Enter the minimum number of reviews:")
     val minReviews = StdIn.readInt()
     timeUtils.saveUserInput("MinReviews: " + minReviews.toString)
@@ -90,7 +90,7 @@ object dataUtils {
    * @param dfRecFiltered DataFrame of filtered users with reviews and app_id columns.
    * @return List of user IDs that meet the criteria.
    */
-  def filterAppIds(dfRecFiltered: DataFrame): List[Int] = {
+  private def filterAppIds(dfRecFiltered: DataFrame): List[Int] = {
     dfRecFiltered.select("app_id").distinct().collect().map(_.getInt(0)).toList
   }
 
@@ -104,7 +104,7 @@ object dataUtils {
    * @param outputDir Directory to save the CSV file.
    * @param targetFileName Desired filename for the final CSV file.
    */
-  def saveFilteredDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, targetFileName: String, filterColumn: String, mode: String): Unit = {
+  private def saveFilteredDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, targetFileName: String, filterColumn: String, mode: String): Unit = {
     // Filter and save the dataset
     filterAndSaveDataset(dfToFilter, keysId, outputDir, filterColumn, mode, targetFileName)
     renamePartFile(outputDir, targetFileName)
@@ -122,7 +122,7 @@ object dataUtils {
    * @param keysId List of key IDs to filter by.
    * @param outputDir Directory to save the filtered CSV file.
    */
-  def filterAndSaveDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, filterColumn: String, mode: String, targetFileName: String): Unit = {
+  private def filterAndSaveDataset(dfToFilter: DataFrame, keysId: List[Int], outputDir: String, filterColumn: String, mode: String, targetFileName: String): Unit = {
     val dfFiltered = dfToFilter.filter(col(filterColumn).isin(keysId: _*))
     if(targetFileName.contains("metadata")) {
       saveAsSingleJSON(dfFiltered,outputDir, mode)
@@ -138,7 +138,7 @@ object dataUtils {
    * @param dirPath Path to the directory.
    * @param targetFileName Desired filename for the file.
    */
-  def renamePartFile(dirPath: String, targetFileName: String): Unit = {
+  private def renamePartFile(dirPath: String, targetFileName: String): Unit = {
     val path = Paths.get(dirPath)
 
     // Check the file extension in targetFileName to determine whether to search for a `.csv` or `.json` part file
@@ -172,7 +172,7 @@ object dataUtils {
    *
    * @param dirPath Path to the directory.
    */
-  def deleteCRCFiles(dirPath: String): Unit = {
+  private def deleteCRCFiles(dirPath: String): Unit = {
     Files.walk(Paths.get(dirPath))
       .iterator()
       .asScala
@@ -186,7 +186,7 @@ object dataUtils {
    * @param df DataFrame to save.
    * @param outputDir Directory to save the CSV file.
    */
-  def saveAsSingleCSV(df: DataFrame, outputDir: String, mode: String): Unit = {
+  private def saveAsSingleCSV(df: DataFrame, outputDir: String, mode: String): Unit = {
     df.coalesce(1)
       .write
       .format("csv")
@@ -196,18 +196,11 @@ object dataUtils {
       .save(outputDir)
   }
 
-  def saveAsSingleJSON(df: DataFrame, outputDir: String, mode: String): Unit = {
+  private def saveAsSingleJSON(df: DataFrame, outputDir: String, mode: String): Unit = {
     df.coalesce(1) // Reduces the DataFrame to a single partition, so output is a single file
       .write
       .format("json")
       .mode(mode)
       .save(outputDir)
   }
-
-
-
-
-
-
-
 }

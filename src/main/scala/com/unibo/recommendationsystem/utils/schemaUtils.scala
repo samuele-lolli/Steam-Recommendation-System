@@ -36,12 +36,6 @@ object schemaUtils {
     StructField("tags", ArrayType(StringType), nullable = true)
   ))
 
-  val metadataSchemaCsv: StructType = StructType(Array(
-    StructField("app_id", IntegerType, nullable = false),
-    StructField("description", StringType, nullable = true),
-    StructField("tags", StringType, nullable = true)
-  ))
-
   val usersSchema: StructType = StructType(Array(
     StructField("user_id", IntegerType, nullable = false),
     StructField("products", IntegerType, nullable = true),

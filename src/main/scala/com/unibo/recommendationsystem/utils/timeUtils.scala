@@ -1,7 +1,5 @@
 package com.unibo.recommendationsystem.utils
 
-import org.sparkproject.dmg.pmml.True
-
 import java.io.{FileWriter, PrintWriter}
 
 object timeUtils {
