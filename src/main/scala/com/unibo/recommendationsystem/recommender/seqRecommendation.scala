@@ -1,12 +1,12 @@
-package com.unibo.recommendationsystem
+package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
-import org.json4s.jackson.JsonMethods
 import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods
 
+import scala.collection.compat.{toMapViewExtensionMethods, toTraversableLikeExtensionMethods}
 import scala.io.Source
 import scala.util.Using
-import scala.collection.compat.{toMapViewExtensionMethods, toTraversableLikeExtensionMethods}
 
 class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath: String) {
 
@@ -31,33 +31,40 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    */
   private def preprocessData(): (List[(Int, String)], List[(Int, Int, String, Array[String])]) = {
 
-    var userAppDetails : List[(Int, Int, String, Array[String])] = List.empty
+      val userAppDetails = dataRec.flatMap {
+        case (userId, appIds) =>
+          for {
+            appId <- appIds
+            appTitle <- dataGames.get(appId)
+            appTags <- metadata.get(appId)
+          } yield (userId, appId, appTitle, appTags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
+      }.filter(_._4.nonEmpty)
 
-       userAppDetails = dataRec
-        .flatMap { case (userId, appIds) =>
-          appIds.flatMap { appId =>
-            for {
-              title <- dataGames.get(appId)
-              tags <- metadata.get(appId)
-            } yield (userId, appId, title, tags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
-          }
-        }.toList.filter(_._4.nonEmpty)
+    //(8897055,616560,Ultimate Epic Battle Simulator,[Ljava.lang.String;@60fe75f7)
 
-    // Step 3: Clean and format merged data
-    val cleanMerge = userAppDetails.map(d => (d._1, d._2, d._3, d._4.mkString(",")))
-
-    val cleanedData = cleanMerge.map { case (id, _, _, tags) =>
-      val cleanedTags = tags.split(",").filter(_.nonEmpty).toList
-      (id, cleanedTags)
+    val cleanedData = userAppDetails.map {
+      case (userId, _, _, appTags) =>
+        (userId, appTags.mkString(",").split(",").filter(_.nonEmpty).toList)
     }.filter(_._2.nonEmpty)
 
-    val filteredData : Map[Int, List[String]]= cleanedData.groupMapReduce(_._1)(_._2)(_ ++ _)
+    //(8897055,List(simulation, sandbox, war, strategy, action, funny, medieval, violent, singleplayer, gore, indie, early access, fantasy, open world, zombies, adventure, survival, memes, third person, atmospheric))
+
+    val filteredData: Map[Int, List[String]] = cleanedData.groupMapReduce(userId => userId._1)(data => data._2)((tags1, tags2) => tags1 ++ tags2)
+//  val filteredData : Map[Int, List[String]]= cleanedData.groupMapReduce(_._1)(_._2)(_ ++ _)
+
+    //(8897055,List(simulation, sandbox, war, strategy, action, funny, medieval, violent, singleplayer, gore, indie, early access, fantasy, open world, zombies, adventure, survival, memes, third person, atmospheric, visual novel, dating sim, casual, sexual content, cute, 2d, anime, story rich, choices matter, romance, multiple endings, demons, mature, comedy, singleplayer, adventure, nudity, hentai, shooter, psychological horror, rpg, action, adventure, anime, sexual content, visual novel, female protagonist, nudity, cute, jrpg, singleplayer, naval, world war ii, third-person shooter, military, fps, shooter, hentai, naval combat, mature, sexual content, visual novel, casual, anime, adventure, simulation, nudity, memes, comedy, nsfw))
 
     val explodedData: List[(Int, String)] = filteredData.toList
       .flatMap { case (userId, tags) => tags.map(tag => (userId, tag)) }
+    /*
+    (8897055,simulation)
+    (8897055,sandbox)
+    (8897055,war)
+    (8897055,strategy)
+    (8897055,action)
+     */
 
-
-    (explodedData, userAppDetails)
+    (explodedData, userAppDetails.toList)
   }
 
   private def calculateTFIDF(explodedList: List[(Int, String)]): Map[Int, Map[String, Double]] = {
@@ -65,6 +72,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       val wordsSplit = userWords.split(",")
       wordsSplit.groupBy(identity).mapValues(_.length.toDouble / wordsSplit.length)
     }
+
 
     val calculateIDF = (groupedWords: Map[Int, String]) => {
       val userCount = groupedWords.size
@@ -85,6 +93,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
         val tfValues = calculateTF(words)
         user -> tfValues.map { case (word, tf) => word -> tf * idfValues.getOrElse(word, 0.0) }
       }
+
   }
 
   /**
@@ -92,23 +101,26 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    */
   private def computeCosineSimilarity(tfidf: Map[Int, Map[String, Double]], targetUser: Int): List[Int] = {
 
-    def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double]): Double = {
-      val dotProduct = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
-      val magnitude = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
+    def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double], targetMagnitude: Double): Double = {
+      val dotProduct = v1.keySet.intersect(v2.keySet).foldLeft(0.0) { (acc, k) => acc + v1(k) * v2(k) }
+      val magnitude = targetMagnitude * math.sqrt(v2.values.map(v => v * v).sum)
       if (magnitude == 0) 0.0 else dotProduct / magnitude
     }
 
-    val targetVector = tfidf(targetUser)// Get the vector for the target user
-      val topUsers = tfidf.view
-        .filter { case (key, _) => key != targetUser } // Exclude the target user itself
-        .mapValues(cosineSimilarity(targetVector, _)) // Calculate cosine similarity between targetVector and each other user's vector
-        .toList // Convert to a list for sorting
-        .sortBy(-_._2) // Sort by similarity score in descending order
-        .take(3) // Take the top 3 most similar users
-        .map(_._1) // Extract the user keys (IDs)
+    val targetVector = tfidf(targetUser)
+    val targetMagnitude = math.sqrt(targetVector.values.map(v => v * v).sum)
 
-      topUsers
-    }
+    val nonZeroTfidf = tfidf.filter { case (_, vector) => math.sqrt(vector.values.map(v => v * v).sum) != 0 }
+
+    val topUsers = nonZeroTfidf.view
+      .filterKeys(_ != targetUser)
+      .mapValues(cosineSimilarity(targetVector, _, targetMagnitude))
+      .toList.sortBy(-_._2)
+      .take(3)
+      .map(_._1)
+
+    topUsers
+  }
 
   /**
    * Extracts final recommendations based on top similar users.
@@ -166,8 +178,6 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     gamesRec.toMap
   }
 
-
-
   def loadMetadata(path: String): Map[Int, Array[String]] = {
     // Read the entire JSON file
     val source = Source.fromFile(path)
@@ -180,9 +190,6 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
         val tags = (json \ "tags").extract[Seq[String]].toArray  // Convert tags to Array[String]
         acc + (appId -> tags)  // Add appId and tags to the accumulator map
     }
-
-
-
     source.close()
     appIdsAndTags
   }

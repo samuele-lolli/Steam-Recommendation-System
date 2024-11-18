@@ -12,7 +12,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "recommendationsystem",
 
-    mainClass in assembly := Some("com.unibo.recommendationsystem.main"),
+    mainClass in assembly := Some("com.unibo.recommendationsystem.distributedMain"),
 
     // Configure assembly settings
     assembly / assemblyJarName := "recommendationSystem.jar",
@@ -23,7 +23,6 @@ lazy val root = (project in file("."))
       case _ => MergeStrategy.first
     }
   )
-
 
 val sparkVersion = "3.3.2"
 
@@ -36,5 +35,4 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-mllib" % sparkVersion,
   "org.apache.spark" %% "spark-streaming" % sparkVersion,
   "org.scala-lang" % "scala-library" % "2.12.14",
-
 )

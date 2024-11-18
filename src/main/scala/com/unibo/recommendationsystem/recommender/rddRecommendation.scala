@@ -1,4 +1,4 @@
-package com.unibo.recommendationsystem
+package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.rdd.RDD

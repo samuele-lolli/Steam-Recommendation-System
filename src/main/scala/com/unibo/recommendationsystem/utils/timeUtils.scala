@@ -6,7 +6,11 @@ import java.io.{FileWriter, PrintWriter}
 
 object timeUtils {
 
-  private val logFilePath = "result.txt"
+  private var logFilePath = "result.txt"
+
+  def setLogFilePath(path : String): Unit = {
+    logFilePath = path
+  }
 
   private def logToFile(message: String): Unit = {
     val writer = new PrintWriter(new FileWriter(logFilePath, true))

@@ -1,11 +1,10 @@
-package com.unibo.recommendationsystem
+package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.ml.feature.{HashingTF, IDF}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import org.apache.spark.storage.StorageLevel
 
 class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 

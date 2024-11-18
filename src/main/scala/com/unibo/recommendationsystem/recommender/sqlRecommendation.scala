@@ -1,9 +1,8 @@
-package com.unibo.recommendationsystem
+package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import scala.collection.Map
 
 class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
@@ -76,36 +75,38 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   }
 
   private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
-    def calculateCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double]): Double = {
-      val dotProduct = vector1.keys.map(k => vector1(k) * vector2.getOrElse(k, 0.0)).sum
-      val magnitude1 = math.sqrt(vector1.values.map(v => v * v).sum)
-      val magnitude2 = math.sqrt(vector2.values.map(v => v * v).sum)
-      if (magnitude1 == 0.0 || magnitude2 == 0.0) 0.0 else dotProduct / (magnitude1 * magnitude2)
-    }
-
-    def rowToTfIdfMap(row: Row): Map[String, Double] = row.getAs[Seq[Row]]("tags").map(tag => tag.getString(0) -> tag.getDouble(1)).toMap
-
-    val targetUserVector = tfidfDF.filter(col("user_id") === targetUser)
-      .groupBy("user_id")
-      .agg(collect_list(struct("word", "tf_idf")).alias("tags"))
-      .collect()
-      .headOption
-      .map(rowToTfIdfMap)
-      .getOrElse(Map.empty[String, Double])
-
-    val otherUsersData = tfidfDF.filter(col("user_id") =!= targetUser)
-      .groupBy("user_id")
-      .agg(collect_list(struct("word", "tf_idf")).alias("tags"))
-
     import spark.implicits._
-    val otherUsersWithSimilarity = otherUsersData.map { row =>
-      val userId = row.getAs[Int]("user_id")
-      val userVector = rowToTfIdfMap(row)
-      val cosineSimilarity = calculateCosineSimilarity(targetUserVector, userVector)
-      (userId, cosineSimilarity)
-    }.toDF("user_id", "cosine_similarity")
+    // Vettore TF-IDF dell'utente target
+    val targetVector = tfidfDF.filter(col("user_id") === targetUser)
+      .select("word", "tf_idf")
+      .withColumnRenamed("tf_idf", "target_tfidf")
 
-    otherUsersWithSimilarity.orderBy(desc("cosine_similarity"))
+    // Unisci tfidfDF con targetVector sui campi "word" per calcolare il prodotto scalare
+    val joinedDF = tfidfDF
+      .join(targetVector, "word")
+      .filter(col("user_id") =!= targetUser)
+      .withColumn("dot_product", col("tf_idf") * col("target_tfidf"))
+
+    // Calcola il numeratore (somma dei prodotti)
+    val numerator = joinedDF.groupBy("user_id")
+      .agg(sum("dot_product").alias("numerator"))
+
+    // Calcola la norma per ciascun utente e per il target
+    val normDF = tfidfDF.withColumn("squared_tfidf", col("tf_idf") * col("tf_idf"))
+    val userNorms = normDF.groupBy("user_id")
+      .agg(sqrt(sum("squared_tfidf")).alias("user_norm"))
+    val targetNorm = normDF.filter(col("user_id") === targetUser)
+      .select(sqrt(sum("squared_tfidf")).alias("target_norm"))
+      .as[Double]
+      .collect()
+      .head
+
+    // Calcola la similarità usando il prodotto scalare e le norme
+    val similarityDF = numerator.join(userNorms, "user_id")
+      .withColumn("cosine_similarity", col("numerator") / (col("user_norm") * lit(targetNorm)))
+
+    // Ordina gli utenti per similarità e prendi i primi 3
+    similarityDF.orderBy(desc("cosine_similarity"))
       .limit(3)
       .select("user_id")
       .as[Int]
