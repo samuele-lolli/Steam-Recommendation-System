@@ -10,23 +10,31 @@ import scala.util.Random
 
 object dataUtils {
   /**
-   * Creates custom datasets for a recommendation system.
-   * Asks the user whether to create new datasets or reuse an existing one.
+   * Handles the creation and management of datasets for a recommendation system.
+   * Offers options to use a full dataset, create a custom dataset, or use an existing custom dataset.
    *
    * @param spark Spark session.
-   * @return The ID of the selected target user or -1 if no user is selected.
+   * @param basePath Base path for dataset files.
+   * @return A tuple containing the target user ID and the dataset type ("full", "custom_new", or "custom_exist").
    */
   def createCustomDatasets(spark: SparkSession, basePath: String): (Int, String) = {
     val firstChoice = promptUser("Do you want to use the full datasets or go to the customization menu? (1/2)")
 
     firstChoice match {
       case "1" =>
-        (4893896, "full")
+        val targetUser = 4893896
+        timeUtils.saveUserInput("---------------------------------------------------------------------")
+        timeUtils.saveUserInput("Mode: Full Dataset")
+        timeUtils.saveUserInput("Min number of reviews: Full")
+        timeUtils.saveUserInput("N. users: Full")
+        timeUtils.saveUserInput(s"TargetUser: $targetUser")
+        (targetUser, "full")
 
       case "2" =>
         val createDatasets = promptUser("Do you want to create a new custom dataset or use a custom dataset already created? (1/2)")
 
-        val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35)
+        val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema)
+          .load(basePath + "recommendations.csv").filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35)
         val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
         val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
         val dfUsers = spark.read.format("csv").option("header", "true").schema(schemaUtils.usersSchema).load(basePath + "users.csv")
@@ -47,25 +55,31 @@ object dataUtils {
 
           case "2" =>
             val targetUser = promptUser("Enter the target user ID:").toInt
+            timeUtils.saveUserInput("---------------------------------------------------------------------")
+            timeUtils.saveUserInput("Mode: Existing dataset")
+            timeUtils.saveUserInput(s"Min number of reviews: Existing dataset")
+            timeUtils.saveUserInput(s"N. users: Existing dataset")
+            timeUtils.saveUserInput(s"TargetUser: Existing dataset")
             (targetUser, "custom_exist")
         }
     }
   }
 
   /**
-   * Filters users who have at least a specified number of reviews.
-   * Also allows selecting a specific target user.
+   * Filters users based on the minimum number of reviews and allows selecting a specific target user.
    *
    * @param dfUsers DataFrame containing user information.
-   * @return A tuple with the list of filtered user IDs and the target user ID.
+   * @return A tuple containing a list of filtered user IDs and the selected target user ID.
    */
   private def filterUsersWithReviews(dfUsers: DataFrame): (List[Int], Int) = {
     val minReviews = promptUser("Enter the minimum number of reviews:").toInt
     val maxUsers = promptUser("Enter the number of users to select:").toInt
     val targetUser = promptUser("Enter the target user ID:")
 
-    timeUtils.saveUserInput(s"MinReviews: $minReviews")
-    timeUtils.saveUserInput(s"N.Users: $maxUsers")
+    timeUtils.saveUserInput("---------------------------------------------------------------------")
+    timeUtils.saveUserInput("Mode: New Custom Dataset")
+    timeUtils.saveUserInput(s"Min number of reviews: $minReviews")
+    timeUtils.saveUserInput(s"N. users: $maxUsers")
     timeUtils.saveUserInput(s"TargetUser: $targetUser")
 
     val filteredUsers = dfUsers.filter(col("reviews") >= minReviews).select("user_id")
@@ -82,9 +96,9 @@ object dataUtils {
   }
 
   /**
-   * Extracts a list of unique app (game) IDs from the filtered recommendations.
+   * Extracts unique app (game) IDs from a filtered recommendations dataset.
    *
-   * @param dfRecFiltered Filtered DataFrame containing recommendations.
+   * @param dfRecFiltered Filtered DataFrame of recommendations.
    * @return A list of unique app IDs.
    */
   private def filterAppIds(dfRecFiltered: DataFrame): List[Int] = {
@@ -92,13 +106,13 @@ object dataUtils {
   }
 
   /**
-   * Saves a filtered dataset in CSV or JSON format, depending on the specified file name.
+   * Saves a filtered DataFrame as a CSV or JSON file.
    *
    * @param df DataFrame to save.
    * @param keys List of filter keys.
-   * @param outputDir Output directory for the saved file.
-   * @param fileName Name of the output file.
-   * @param filterColumn Name of the column to apply the filter on.
+   * @param outputDir Output directory for the file.
+   * @param fileName Output file name.
+   * @param filterColumn Column used for filtering the DataFrame.
    * @param mode Write mode (e.g., "overwrite" or "append").
    */
   private def saveFilteredDataset(df: DataFrame, keys: List[Int], outputDir: String, fileName: String, filterColumn: String, mode: String): Unit = {
@@ -111,12 +125,12 @@ object dataUtils {
   }
 
   /**
-   * Saves a DataFrame as a single file in a specified directory, in CSV or JSON format.
+   * Saves a DataFrame as a single file in a specified format (CSV or JSON).
    *
    * @param df DataFrame to save.
-   * @param outputDir Output directory for the saved file.
-   * @param format Output file format ("csv" or "json").
-   * @param mode Write mode (e.g., "overwrite" or "append").
+   * @param outputDir Output directory.
+   * @param format File format ("csv" or "json").
+   * @param mode Write mode ("overwrite" or "append").
    */
   private def saveAsSingleFile(df: DataFrame, outputDir: String, format: String, mode: String): Unit = {
     df.coalesce(1)
@@ -129,10 +143,10 @@ object dataUtils {
   }
 
   /**
-   * Renames the generated part-* output file to the specified file name.
+   * Renames the generated part-* file in the output directory to a specific name.
    *
    * @param outputDir Directory containing the part-* file.
-   * @param targetFileName Final name to assign to the file.
+   * @param targetFileName Desired name for the file.
    */
   private def renamePartFile(outputDir: String, targetFileName: String): Unit = {
     val path = Paths.get(outputDir)
@@ -149,9 +163,9 @@ object dataUtils {
   }
 
   /**
-   * Deletes .crc checksum files in the specified directory.
+   * Deletes .crc files in a given directory to clean up after saving.
    *
-   * @param dirPath Path to the directory where .crc files are located.
+   * @param dirPath Path to the directory.
    */
   private def deleteCRCFiles(dirPath: String): Unit = {
     Files.walk(Paths.get(dirPath))
@@ -162,22 +176,22 @@ object dataUtils {
   }
 
   /**
-   * Reads a CSV dataset with the specified schema.
+   * Reads a CSV dataset with a predefined schema.
    *
    * @param spark Spark session.
    * @param path Path to the CSV file.
-   * @param schema Schema to apply while reading the dataset.
-   * @return Resulting DataFrame.
+   * @param schema Schema to apply during reading.
+   * @return DataFrame created from the CSV file.
    */
   private def readDataset(spark: SparkSession, path: String, schema: org.apache.spark.sql.types.StructType): DataFrame = {
     spark.read.format("csv").option("header", "true").schema(schema).load(path)
   }
 
   /**
-   * Displays a message to the user and reads input.
+   * Prompts the user with a message and reads their input.
    *
    * @param message Message to display.
-   * @return User input as a lowercase trimmed string.
+   * @return Trimmed and lowercased user input.
    */
   private def promptUser(message: String): String = {
     println(message)
