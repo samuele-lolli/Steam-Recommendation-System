@@ -9,7 +9,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * (RDD version) Generates personalized recommendations for a target user
    *
-   * @param targetUser The user ID for whom the recommendations are being generated.
+   * @param targetUser Int, The user ID for whom the recommendations are being generated.
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
@@ -26,9 +26,9 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    * Preprocesses the input data to create intermediate RDDs needed for further calculations.
    *
    * @return A tuple of:
-   *         - RDD of (appId, tags, userId): Each app with its tags and associated user.
-   *         - RDD of (userId, tags): Grouped tags for each user for tf-idf calculation.
-   *         - RDD of (appId, title): Titles of the games.
+   *         - RDD[(Int, String, String)], Each app with its tags and associated user.
+   *         - RDD[(String, String)], Grouped tags for each user for tf-idf calculation.
+   *         - RDD[(Int, String)], Titles of the games.
    */
   private def preprocessData(): (RDD[(Int, String, String)], RDD[(String, String)], RDD[(Int, String)]) = {
 
@@ -62,7 +62,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       (appId, tags, userId)
     }.filter(_._2.nonEmpty)
       .cache()
-
     /*
     (1544020,horror,sci-fi,survival horror,third-person shooter,space,shooter,action-adventure,third person,pve,3d,action,story rich,linear,realistic,adventure,robots,cinematic,dark,futuristic,shoot 'em up,11608913)
     (1325200,rpg,action,souls-like,character customization,difficult,co-op,jrpg,multiplayer,fantasy,dark fantasy,historical,story rich,violent,singleplayer,hack and slash,dark,medieval,atmospheric,gore,female protagonist,11593837)
@@ -87,8 +86,8 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Calculates Term Frequency-Inverse Document Frequency (TF-IDF) values for user tags.
    *
-   * @param userTagsGroup RDD[(String, String)] where each entry is (userId, tags).
-   * @return RDD[(String, Map[String, Double])] where each entry is (userId, Map(tag -> tf-idf score)).
+   * @param userTagsGroup RDD[(String, String)], userId with his grouped tags.
+   * @return RDD[(String, Map[String, Double])], tf-idf score map for each userId.
    */
   private def calculateTFIDF(userTagsGroup: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
     //Takes in input user's tags and calculate the Term Frequency for each tag
@@ -117,7 +116,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     (co-op campaign,2.6753709876189307)
      */
 
-    //Calculates the TF-IDF values for each tag for every user:
+    //Calculates the TF-IDF values for each tag for every user
     val tfidfUserTags =  userTagsGroup.map { case (user, tags) =>
       val tfValues = calculateTF(tags)
       (user, tfValues.map { case (tag, tf) => (tag, tf * idfValuesTag.getOrElse(tag, 0.0)) })
@@ -137,9 +136,9 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Computes cosine similarity between the target user and all other users.
    *
-   * @param targetUser the ID of the target user.
-   * @param tfidfUserTags RDD[(String, Map[String, Double])] where each entry is (userId, Map(tag -> tf-idf)).
-   * @return Array[(String, Double)], the three userId with high cosine similarity score,  each entry is (userId, similarity score).
+   * @param targetUser Int, the ID of the target user
+   * @param tfidfUserTags RDD[(String, Map[String, Double])], tf-idf score map for each userId
+   * @return Array[(String, Double)], the three userId with high cosine similarity score
    */
   private def computeCosineSimilarity(targetUser: Int, tfidfUserTags: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
 
@@ -153,7 +152,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val numerator = (targetScores: Map[String, Double], otherScores: Map[String, Double]) =>
       targetScores.foldLeft(0.0) { case (acc, (tag, score)) => acc + score * otherScores.getOrElse(tag, 0.0) }
 
-    //Computes the magnitude of a vector: computes the square root of the sum of the squares of all TF-IDF values for the vector.
+    //Computes the magnitude of a vector: computes the square root of the sum of the squares of all TF-IDF values for the vector
     val denominator = (scoresMap: Map[String, Double]) => math.sqrt(scoresMap.values.map(x => x * x).sum)
 
     //Computes cosine similarity
@@ -182,14 +181,14 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Generates game recommendations for the target user based on similar users' preferences.
    *
-   * @param appIdUserDetails RDD[(Int, String, String)] where each entry is (appId, tags, userId).
-   * @param topUsersXSimilarity Array[(String, Double)] top similar users with similarity scores.
-   * @param gamesData RDD[(Int, String)] where each entry is (appId, game title).
-   * @param targetUser the ID of the target user.
+   * @param appIdUserDetails RDD[(Int, String, String)],  where each entry is (appId, tags, userId).
+   * @param topUsersXSimilarity Array[(String, Double)], top similar users with similarity scores.
+   * @param gamesData RDD[(Int, String)], where each entry is (appId, game title).
+   * @param targetUser Int, the ID of the target user.
    */
   private def generateFinalRecommendations(appIdUserDetails: RDD[(Int, String, String)], topUsersXSimilarity: Array[(String, Double)], gamesData: RDD[(Int, String)], targetUser: Int): Unit = {
 
-    //Retrieves app IDs played by the target user.
+    //Retrieves app IDs played by the target user
     val targetUserAppIds = appIdUserDetails
       .filter(_._3 == targetUser.toString)
       .map(_._1)
@@ -210,7 +209,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     9050007
     */
 
-    //Identifies recommended games (not played by the target user).
+    //Identifies recommended games (not played by the target user)
     val finalRecommendations = appIdUserDetails
       .filter { case (appId, _, user) => similarUsers.contains(user) && !targetUserAppIds.contains(appId) }
       .map { case (appId, _, user) => (appId, user) }
@@ -224,7 +223,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     ....
     */
 
-    //Joins recommendations with game titles and prints them.
+    //Joins recommendations with game titles and prints them
     val recommendationsWithTitle = finalRecommendations
       .join(gamesData)
       .map { case (appId, (userId, title)) => (appId, title, userId) }
