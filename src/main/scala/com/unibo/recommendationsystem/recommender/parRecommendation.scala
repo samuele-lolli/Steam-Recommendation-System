@@ -3,10 +3,12 @@ package com.unibo.recommendationsystem.recommender
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
+
 import scala.collection.concurrent.TrieMap
 import scala.collection.parallel.{ParMap, ParSeq}
 import scala.io.Source
 import scala.util.Using
+import scala.util.control.Breaks.break
 
 class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath: String) {
   private val dataRec: Map[Int, Array[Int]] = loadRecommendations(dataRecPath)
@@ -50,29 +52,29 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
         }
       }.filter(_._4.nonEmpty).toSeq
 
-    val cleanMerge: ParSeq[(Int, Int, String, String)] = userAppDetails.map(d =>
+    val userTags: ParSeq[(Int, Int, String, String)] = userAppDetails.map(d =>
       (d._1, d._2, d._3, d._4.mkString(","))
     )
 
-    val cleanedData: ParSeq[(Int, Seq[String])] = cleanMerge.map { case (id, _, _, tags) =>
+    val groupedUserTags: ParSeq[(Int, Seq[String])] = userTags.map { case (id, _, _, tags) =>
       val cleanedTags = tags.split(",").filter(_.nonEmpty).toSeq
       (id, cleanedTags)
     }.filter(_._2.nonEmpty)
 
-    val filteredData: ParSeq[(Int, ParSeq[String])] = cleanedData
+    val userTagsVector: ParSeq[(Int, ParSeq[String])] = groupedUserTags
       .groupBy(_._1)
       .map { case (id, grouped) =>
         val mergedTags = grouped.flatMap(_._2)
         (id, mergedTags)
       }.toSeq
 
-    val explodedData: Seq[(Int, String)] = filteredData
+    val explodeUserTag: Seq[(Int, String)] = userTagsVector
       .flatMap { case (userId, tags) => tags.map(tag => (userId, tag)) }.seq
 
-    (explodedData.par, userAppDetails)
+    (explodeUserTag.par, userAppDetails)
   }
   /*
-   * explodedData
+   * userTagsCouples
    * (5382866,strategy)
    * (5382866,classic)
    * (5382866,funny)
@@ -154,21 +156,21 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
     def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double]): Double = {
       //Computes the dot product of two vectors
-      val dotProduct = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
+      val numerator = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
       //Computes the product of magnitudes of the two vectors)
-      val magnitude = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
-      if (magnitude == 0) 0.0 else dotProduct / magnitude
+      val denominator = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
+      if (denominator == 0) 0.0 else numerator / denominator
     }
 
     //Takes the target user's vector
-    val targetVector = tfidf(targetUser)
+    val targetUserScores = tfidf(targetUser)
 
     //Find the top 3 similar users
     val topUsers = tfidf.seq.view
       .filter { case (key, _) => key != targetUser }
       .par
       .map { case (key, vector) =>
-        key -> cosineSimilarity(targetVector, vector)
+        key -> cosineSimilarity(targetUserScores, vector)
       }
       .toList // Convert to list for further processing
       .sortBy(-_._2) // Sort by similarity score in descending order
@@ -191,12 +193,12 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       .map(_._2)
 
     //Group games played by top users excluding target user
-    val filteredGamesGrouped = userAppDetails.filter {
+    val recommendedGames = userAppDetails.filter {
       case (userId, gameId, _, _) =>
         topUsers.contains(userId) && !gamesByTargetUser.exists(_ == gameId)
     }.groupBy(_._2)
 
-    filteredGamesGrouped.foreach { case (gameId, userGames) =>
+    recommendedGames.foreach { case (gameId, userGames) =>
       val userIds = userGames.map(_._1).mkString(", ")
       val gameInfo = userGames.head
       println(s"Game ID: $gameId, Title: ${gameInfo._3}, Users: $userIds")
