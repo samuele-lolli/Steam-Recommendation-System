@@ -200,7 +200,6 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
   /**
    * Loads games data from a CSV file
-   *
    * @param path The file path to the games file
    * @return A map of appId to game titles
    */

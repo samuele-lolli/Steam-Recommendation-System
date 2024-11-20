@@ -102,7 +102,6 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
   /**
    * Computes TF-IDF values for all users based on their tags
-   *
    * @param userTagsMap ParSeq[(Int, String)], map each user with his tags for tf-idf calculation
    * @return ParMap[Int, Map[String, Double]], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    */
