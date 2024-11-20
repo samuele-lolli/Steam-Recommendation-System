@@ -1,15 +1,12 @@
 package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
-import org.apache.spark
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
-
 import scala.collection.concurrent.TrieMap
 import scala.collection.parallel.{ParMap, ParSeq}
 import scala.io.Source
 import scala.util.Using
-import scala.util.control.Breaks.break
 
 class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath: String) {
   private val dataRec: Map[Int, Array[Int]] = loadRecommendations(dataRecPath)
@@ -41,7 +38,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    *         - ParSeq[(Int, Int, String, Array[String])], full user-item metadata
    */
   private def preprocessData(): (ParSeq[(Int, String)], ParSeq[(Int, Int, String, Array[String])]) = {
-    // Utilizza un ParSeq per memorizzare i dettagli dell'app dell'utente
+    //Combines user, game, and metadata details, filtering out empty tags
     val userAppDetails: ParSeq[(Int, Int, String, Array[String])] = dataRec
       .par
       .flatMap { case (userId, appIds) =>
@@ -57,10 +54,10 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       (d._1, d._2, d._3, d._4.mkString(","))
     )
 
-   val cleanedData: ParSeq[(Int, Seq[String])] = cleanMerge.map { case (id, _, _, tags) =>
-     val cleanedTags = tags.split(",").filter(_.nonEmpty).toSeq // Use Seq instead of ParArray
-     (id, cleanedTags)
-   }.filter(_._2.nonEmpty)
+    val cleanedData: ParSeq[(Int, Seq[String])] = cleanMerge.map { case (id, _, _, tags) =>
+      val cleanedTags = tags.split(",").filter(_.nonEmpty).toSeq
+      (id, cleanedTags)
+    }.filter(_._2.nonEmpty)
 
     val filteredData: ParSeq[(Int, ParSeq[String])] = cleanedData
       .groupBy(_._1)
@@ -110,11 +107,13 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * @return ParMap[Int, Map[String, Double]], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    */
   private def calculateTFIDF(userTagsMap: ParSeq[(Int, String)]): ParMap[Int, Map[String, Double]] = {
+    //Takes user's tags as input and calculates the Term Frequency for each tag
     val calculateTF = (userWords: String) => {
       val wordsSplit = userWords.split(",")
       wordsSplit.groupBy(identity).mapValues(_.length.toDouble / wordsSplit.length)
     }
 
+    //Computes the Inverse Document Frequency for each tag
     val calculateIDF = (groupedWords: ParMap[Int, String]) => {
       val userCount = groupedWords.size
       groupedWords.values
@@ -130,6 +129,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
     val idfValues: Map[String, Double] = calculateIDF(groupedUserWords).seq
 
+    //Calculates the TF-IDF values for each tag for every user
     groupedUserWords
       .map { case (user, words) =>
         val tfValues = calculateTF(words)
@@ -153,26 +153,31 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    */
   private def computeCosineSimilarity(tfidf: ParMap[Int, Map[String, Double]], targetUser: Int): List[Int] = {
 
-  def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double]): Double = {
-    val dotProduct = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
-    val magnitude = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
-    if (magnitude == 0) 0.0 else dotProduct / magnitude
-  }
-
-  val targetVector = tfidf(targetUser)
-  val topUsers = tfidf.seq.view
-    .filter { case (key, _) => key != targetUser }
-    .par
-    .map { case (key, vector) =>
-      key -> cosineSimilarity(targetVector, vector)
+    def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double]): Double = {
+      //Computes the dot product of two vectors
+      val dotProduct = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
+      //Computes the product of magnitudes of the two vectors)
+      val magnitude = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
+      if (magnitude == 0) 0.0 else dotProduct / magnitude
     }
-    .toList // Convert to list for further processing
-    .sortBy(-_._2) // Sort by similarity score in descending order
-    .take(3) // Take the top 3 most similar users
-    .map(_._1)
 
-  topUsers
-}
+    //Takes the target user's vector
+    val targetVector = tfidf(targetUser)
+
+    //Find the top 3 similar users
+    val topUsers = tfidf.seq.view
+      .filter { case (key, _) => key != targetUser }
+      .par
+      .map { case (key, vector) =>
+        key -> cosineSimilarity(targetVector, vector)
+      }
+      .toList // Convert to list for further processing
+      .sortBy(-_._2) // Sort by similarity score in descending order
+      .take(3) // Take the top 3 most similar users
+      .map(_._1)
+
+    topUsers
+  }
 
   /**
    * Generates and prints final game recommendations for a target user based on games played by similar users
@@ -182,30 +187,33 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * @param userAppDetails ParSeq[(Int, Int, String, Array[String])], full user-item metadata
    */
   private def generateFinalRecommendations(topUsers: List[Int], targetUser: Int, userAppDetails: ParSeq[(Int, Int, String, Array[String])]): Unit = {
-    // Step 1: Ottieni tutti i giochi giocati dall'utente target
+    //Get all games played by the target user
     val gamesByTargetUser = userAppDetails.filter(_._1 == targetUser)
       .map(_._2)
 
-    // Step 2: Filtra cleanMerge per ottenere i giochi giocati dai top utenti ma non dall'utente target
+    //Group games played by top users excluding target user
     val filteredGamesGrouped = userAppDetails.filter {
       case (userId, gameId, _, _) =>
         topUsers.contains(userId) && !gamesByTargetUser.exists(_ == gameId)
     }.groupBy(_._2)
 
-   filteredGamesGrouped.foreach { case (gameId, userGames) =>
-     val userIds = userGames.map(_._1).mkString(", ")
-     val gameInfo = userGames.head
-     println(s"Game ID: $gameId, Title: ${gameInfo._3}, Users: $userIds")
-   }
+    filteredGamesGrouped.foreach { case (gameId, userGames) =>
+      val userIds = userGames.map(_._1).mkString(", ")
+      val gameInfo = userGames.head
+      println(s"Game ID: $gameId, Title: ${gameInfo._3}, Users: $userIds")
+    }
   }
 
-
+  /**
+   * Loads user recommendations from a CSV file
+   *
+   * @param path The file path to the recommendations file
+   * @return A map that returns an array of games recommended by each user
+   */
   def loadRecommendations(path: String): Map[Int, Array[Int]] = {
-
     Using.resource(Source.fromFile(path)) { source =>
-
       val lines = source.getLines().drop(1).toArray.par
-
+      //Mutable map to store each user's list of appId
       val usersRec = TrieMap[String, List[Int]]()
 
       lines.foreach { line =>
@@ -218,19 +226,26 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
           usersRec.put(user, updatedList)
         }
       }
-
+      //Convert the mutable map to an immutable Map[Int, Array[Int]]
       usersRec.map { case (user, appIds) =>
         (user.toInt, appIds.reverse.toArray)
       }.toMap
     }
   }
 
-  /** Load game data from CSV */
+  /**
+   * Loads games data from a CSV file
+   *
+   * @param path The file path to the games file
+   * @return A map of appId to game titles
+   */
   private def loadDataGames(path: String): Map[Int, String] = {
+    //Read the file and process each line
     val lines = Using.resource(Source.fromFile(path)) { source =>
       source.getLines().drop(1).toSeq.par
     }
 
+    //Convert to an immutable Map[Int, String]
     val gamesRec = lines.map { line =>
       val splitLine = line.split(",").map(_.trim)
       val appId = splitLine.head.toInt
@@ -241,20 +256,27 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     gamesRec.seq
   }
 
-def loadMetadata(path: String): Map[Int, Array[String]] = {
-
-  val source = Source.fromFile(path)
-  implicit val formats: DefaultFormats.type = DefaultFormats
-
-  val appIdsAndTags = source.getLines().foldLeft(Map.empty[Int, Array[String]]) {
-    case (acc, line) =>
-      val json = JsonMethods.parse(line)
-      val appId = (json \ "app_id").extract[Int]
-      val tags = (json \ "tags").extract[Seq[String]].toArray
-      acc + (appId -> tags)
+  /**
+   * Loads game metadata from a JSON file
+   *
+   * @param path The file path to the JSON file
+   * @return A map of appId to arrays of tags
+   */
+  def loadMetadata(path: String): Map[Int, Array[String]] = {
+    //Read the entire JSON file
+    val source = Source.fromFile(path)
+    implicit val formats: DefaultFormats.type = DefaultFormats
+    // Process each line of the JSON file
+    val appIdsAndTags = source.getLines().foldLeft(Map.empty[Int, Array[String]]) {
+      case (acc, line) =>
+        val json = JsonMethods.parse(line)
+        val appId = (json \ "app_id").extract[Int]
+        val tags = (json \ "tags").extract[Seq[String]].toArray // Convert tags to Array[String]
+        acc + (appId -> tags) // Add appId and tags to the accumulator map
+    }
+    //Close the file after processing
+    source.close()
+    appIdsAndTags
   }
-  source.close()
-  appIdsAndTags
-}
 
 }

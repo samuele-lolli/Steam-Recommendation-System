@@ -3,7 +3,6 @@ package com.unibo.recommendationsystem.recommender
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
-
 import scala.collection.compat.{toMapViewExtensionMethods, toTraversableLikeExtensionMethods}
 import scala.io.Source
 import scala.util.Using
@@ -38,7 +37,6 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    *         - List[(Int, Int, String, Array[String])], full user-item metadata
    */
   private def preprocessData(): (Map[Int, String], List[(Int, Int, String, Array[String])]) = {
-
     //Combines user, game, and metadata details, filtering out empty tags
       val userAppDetails = dataRec.flatMap {
         case (userId, appIds) =>
@@ -48,7 +46,8 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
             appTags <- metadata.get(appId)
           } yield (userId, appId, appTitle, appTags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
       }.filter(_._4.nonEmpty)
-    /*(8897055,616560,Ultimate Epic Battle Simulator,[Ljava.lang.String;@60fe75f7)
+    /*
+     * (8897055,616560,Ultimate Epic Battle Simulator,[Ljava.lang.String;@60fe75f7)
     */
 
     // Maps userIds to their list of tags and filters out empty lists
@@ -90,8 +89,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * @return Map[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    */
   private def calculateTFIDF(userTagsMap: Map[Int, String]): Map[Int, Map[String, Double]] = {
-
-    //Takes in input user's tags and calculate the Term Frequency for each tag
+    //Takes user's tags as input and calculates the Term Frequency for each tag
     val calculateTF = (tags: String) => {
       val allTags = tags.split(",")
       allTags.groupBy(identity).mapValues(_.length.toDouble / allTags.length)
