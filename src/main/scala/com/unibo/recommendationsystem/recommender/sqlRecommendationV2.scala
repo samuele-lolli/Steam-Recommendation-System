@@ -1,9 +1,10 @@
 package com.unibo.recommendationsystem.recommender
 
-import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
+import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Row, SparkSession}
+import org.apache.spark.sql._
 import org.apache.spark.storage.StorageLevel
+
 import scala.collection.Map
 
 class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
@@ -159,27 +160,22 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
    * @param gamesTitles DataFrame containing game IDs and titles.
    * @param cleanMerge Fully joined and cleaned data set.
    */
-  def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, cleanMerge: DataFrame) = {
-
-    val gamesByTopUsers = cleanMerge.filter(col("user_id").isin(top3Users: _*)) // Use : _* to expand the list
+  def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, cleanMerge: DataFrame): Unit = {
+    val gamesByTopUsers = cleanMerge.filter(col("user_id").isin(top3Users: _*))
       .select("app_id", "user_id")
 
     val gamesByTargetUser = cleanMerge.filter(col("user_id") === targetUser)
       .select("app_id")
 
-    //Exclude the games played by the target user from the games played by the similar users
     val recommendedGames = gamesByTopUsers.join(gamesByTargetUser, Seq("app_id"), "left_anti")
 
-    //Join with dfGames to get the titles of the recommended games
     val finalRecommendations = recommendedGames
       .join(gamesTitles.select("app_id", "title"), Seq("app_id"))
       .select("app_id", "title", "user_id")
 
-    // Show the resulting DataFrame with titles and users
     val groupedRecommendations = finalRecommendations
-      .groupBy("title")
-      .agg(collect_list("user_id").alias("user_ids")) // Aggregate user_ids for each title
-      .select("app_id", "title", "user_ids") // Select only the title and aggregated user_ids
+      .groupBy("app_id", "title") // Includi app_id
+      .agg(collect_list("user_id").alias("user_ids"))
 
     groupedRecommendations.show(groupedRecommendations.count.toInt, truncate = false)
   }

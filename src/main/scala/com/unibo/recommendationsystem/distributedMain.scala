@@ -46,14 +46,7 @@ val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schema
 val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
 val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
 
-val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
-
-val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
-
-val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL", "SQL")
+//
 
 val sqlV2Recommender = new sqlRecommendationV2(sparkLocal, dfRec, dfGames, dfMetadata)
 timeUtils.time(sqlV2Recommender.recommend(targetUser), "Total time execution SQLV2", "SQLV2")

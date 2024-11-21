@@ -8,7 +8,6 @@ import scala.collection.concurrent.TrieMap
 import scala.collection.parallel.{ParMap, ParSeq}
 import scala.io.Source
 import scala.util.Using
-import scala.util.control.Breaks.break
 
 class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath: String) {
   private val dataRec: Map[Int, Array[Int]] = loadRecommendations(dataRecPath)
