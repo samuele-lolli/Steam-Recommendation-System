@@ -6,7 +6,7 @@ import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 import scala.collection.Map
 
-class sqlRecommendationV2(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
+class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   /**
    * Generate game recommendations for a specific user.
@@ -34,6 +34,7 @@ class sqlRecommendationV2(spark: SparkSession, dataRec: Dataset[Row], dataGames:
    *         - `cleanMerge`: Fully joined and cleaned data set.
    */
   private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
+
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
 
@@ -57,7 +58,7 @@ class sqlRecommendationV2(spark: SparkSession, dataRec: Dataset[Row], dataGames:
 
     // Explode tags for calculating TFIDF
     val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
-      .persist(StorageLevel.MEMORY_AND_DISK)
+      //.persist(StorageLevel.MEMORY_AND_DISK)
 
     val gamesTitles = dataGames.select("app_id", "title")
 

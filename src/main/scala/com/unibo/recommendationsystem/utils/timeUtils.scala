@@ -1,6 +1,9 @@
 package com.unibo.recommendationsystem.utils
 
+import com.google.cloud.storage.{BlobId, BlobInfo, Storage, StorageOptions}
+
 import java.io.{FileWriter, PrintWriter}
+import java.nio.charset.StandardCharsets
 
 object timeUtils {
   /** Path to the log file where messages will be saved. */
@@ -21,13 +24,38 @@ object timeUtils {
    * @param message The message to be logged.
    */
   private def logToFile(message: String): Unit = {
-    val writer = new PrintWriter(new FileWriter(logFilePath, true))
-    try {
-      writer.println(message)
-    } finally {
-      writer.close()
+    if (logFilePath.startsWith("gs://")) {
+      // Parse the bucket and object name from the GCS path
+      val uri = logFilePath.stripPrefix("gs://")
+      val bucketName = uri.substring(0, uri.indexOf('/'))
+      val objectName = uri.substring(uri.indexOf('/') + 1)
+
+      // Get the GCS storage client
+      val storage: Storage = StorageOptions.getDefaultInstance.getService
+
+      // Create a GCS BlobId and BlobInfo
+      val blobId = BlobId.of(bucketName, objectName)
+      val blobInfo = BlobInfo.newBuilder(blobId).build()
+
+      // Read existing content (if the file already exists)
+      val existingContent = Option(storage.get(blobId))
+        .map(blob => new String(blob.getContent(), StandardCharsets.UTF_8))
+        .getOrElse("")
+
+      // Append the new message and write back to GCS
+      val newContent = existingContent + message + "\n"
+      storage.create(blobInfo, newContent.getBytes(StandardCharsets.UTF_8))
+    } else {
+      // Use local filesystem for non-GCS paths
+      val writer = new PrintWriter(new FileWriter(logFilePath, true))
+      try {
+        writer.println(message)
+      } finally {
+        writer.close()
+      }
     }
   }
+
 
   /**
    * Saves a user-provided input message to the log file".
