@@ -173,13 +173,13 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
     //Join with dfGames to get the titles of the recommended games
     val finalRecommendations = recommendedGames
       .join(gamesTitles.select("app_id", "title"), Seq("app_id"))
-      .select("title", "user_id")
+      .select("app_id", "title", "user_id")
 
     // Show the resulting DataFrame with titles and users
     val groupedRecommendations = finalRecommendations
       .groupBy("title")
       .agg(collect_list("user_id").alias("user_ids")) // Aggregate user_ids for each title
-      .select("title", "user_ids") // Select only the title and aggregated user_ids
+      .select("app_id", "title", "user_ids") // Select only the title and aggregated user_ids
 
     groupedRecommendations.show(groupedRecommendations.count.toInt, truncate = false)
   }
