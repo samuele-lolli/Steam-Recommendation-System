@@ -114,7 +114,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
     val recommendedGames = gamesByTopUsers.join(gamesByTargetUser, Seq("app_id"), "left_anti")
     val finalRecommendations = recommendedGames.join(gamesTitles.select("app_id", "title"), Seq("app_id"))
-      .groupBy("title")
+      .groupBy("app_id","title")
       .agg(collect_list("user_id").alias("user_ids"))
 
     finalRecommendations.show(finalRecommendations.count().toInt, truncate = false)

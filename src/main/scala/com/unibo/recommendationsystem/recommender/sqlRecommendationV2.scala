@@ -164,9 +164,9 @@ Elapsed time for Getting Similar Users:	533863ms (533863187600ns)
 
     // Show the resulting DataFrame with titles and users
     val groupedRecommendations = finalRecommendations
-      .groupBy("title")
+      .groupBy("app_id","title")
       .agg(collect_list("user_id").alias("user_ids")) // Aggregate user_ids for each title
-      .select("title", "user_ids") // Select only the title and aggregated user_ids
+      .select("app_id", "title", "user_ids") // Select only the title and aggregated user_ids
 
     groupedRecommendations.show(groupedRecommendations.count.toInt, truncate = false)
   }

@@ -229,8 +229,8 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .map { case (appId, (userId, title)) => (appId, title, userId) }
       .distinct()
 
-    recommendationsWithTitle.collect().foreach { case (_, title, userId) =>
-      println(s"userId: $userId, title: $title")
+    recommendationsWithTitle.collect().foreach { case (appId, title, userId) =>
+      println(s"Game ID: $appId, userId: $userId, title: $title")
     }
     /*
     userId: 9050007, title: STAR WARS™ Empire at War - Gold Pack
