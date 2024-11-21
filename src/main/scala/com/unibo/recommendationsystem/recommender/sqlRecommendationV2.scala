@@ -10,13 +10,13 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
 
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (explodedDF, filteredData, gamesTitles, cleanMerge) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL")
+    val (explodedDF, filteredData, gamesTitles, cleanMerge) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQLv2")
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL")
+    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQLv2")
     println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL")
+    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQLv2")
     println("Calculate final recommendation...")
-    timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, cleanMerge), "Generating Recommendations", "SQL")
+    timeUtils.time(getFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, cleanMerge), "Generating Recommendations", "SQLv2")
   }
 
   private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
@@ -42,8 +42,8 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
 
 
     // Explode aggregated data for TF-IDF calculation
-    val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
-      .persist(StorageLevel.MEMORY_AND_DISK)
+    val explodedDF =  filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
+      //.persist(StorageLevel.MEMORY_AND_DISK)
 
     val gamesTitles = dataGames.select("app_id", "title")
 
@@ -150,15 +150,9 @@ Elapsed time for Getting Similar Users:	533863ms (533863187600ns)
     val gamesByTopUsers = cleanMerge.filter(col("user_id").isin(top3Users: _*)) // Use : _* to expand the list
       .select("app_id", "user_id")
 
-    gamesByTopUsers.show(gamesByTopUsers.count.toInt, truncate = false)
-    println("GamesByTopUsers")
-
     // Step 3: Fetch the games played by the target user
     val gamesByTargetUser = cleanMerge.filter(col("user_id") === targetUser)
       .select("app_id")
-
-    gamesByTargetUser.show(gamesByTargetUser.count.toInt, truncate = false)
-    println("GamesByTargetUser")
 
     // Step 4: Exclude the games played by the target user from the games played by the similar users
     val recommendedGames = gamesByTopUsers.join(gamesByTargetUser, Seq("app_id"), "left_anti")

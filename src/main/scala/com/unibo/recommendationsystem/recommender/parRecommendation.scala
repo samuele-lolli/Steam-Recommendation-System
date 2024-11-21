@@ -105,7 +105,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   /**
    * Computes TF-IDF values for all users based on their tags
    * @param userTagsMap ParSeq[(Int, String)], map each user with his tags for tf-idf calculation
-   * @return ParMap[Int, Map[String, Double]], A map where each user ID maps to another map of tags and their respective TF-IDF scores
+   * @return ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    */
   private def calculateTFIDF(userTagsMap: ParSeq[(Int, String)]): ParMap[Int, Map[String, Double]] = {
     //Takes user's tags as input and calculates the Term Frequency for each tag
@@ -148,7 +148,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   /**
    * Computes cosine similarity between the target user and all other users
    *
-   * @param tfidf ParMap[Int, Map[String, Double]], A map where each user ID maps to another map of tags and their respective TF-IDF scores
+   * @param tfidf ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    * @param targetUser Int, the ID of the target user
    * @return A list of the top 3 most similar user IDs
    */
