@@ -1,6 +1,6 @@
 package com.unibo.recommendationsystem
 
-import com.unibo.recommendationsystem.recommender.{mllibRecommendation, parRecommendation, rddRecommendation, seqRecommendation, sqlRecommendation}
+import com.unibo.recommendationsystem.recommender.{mllibRecommendation, parRecommendation, rddRecommendation, seqRecommendation, sqlRecommendation, sqlRecommendationV2}
 import com.unibo.recommendationsystem.utils.dataUtils.createCustomDatasets
 import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -87,9 +87,13 @@ object main {
     val rddRecommender = new rddRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
 
-    /* Initialize and run the SQL-based recommender algorithm. */
+    /* Initialize and run the SQL-full-based recommender algorithm. */
     val sqlRecommender = new sqlRecommendation(spark, dfRec, dfGames, dfMetadata)
-    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL", "SQL")
+    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
+
+    /* Initialize and run the SQL-hybrid-based recommender algorithm. */
+    val sqlRecommenderV2 = new sqlRecommendationV2(spark, dfRec, dfGames, dfMetadata)
+    timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
   }
 
   /**
@@ -127,8 +131,12 @@ object main {
     val rddRecommender = new rddRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
 
-    /* SQL-based recommender. */
+    /* SQL-full-based recommender. */
     val sqlRecommender = new sqlRecommendation(spark, dfRec, dfGames, dfMetadata)
-    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL", "SQL")
+    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
+
+    /* SQL-hybrid-based recommender. */
+    val sqlRecommenderV2 = new sqlRecommendationV2(spark, dfRec, dfGames, dfMetadata)
+    timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
   }
 }

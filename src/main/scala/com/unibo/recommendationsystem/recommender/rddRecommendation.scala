@@ -91,13 +91,13 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    */
   private def calculateTFIDF(userTagsGroup: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
     //Takes in input user's tags and calculate the Term Frequency for each tag
-    val calculateTF = (tags: String) => {
+    def calculateTF = (tags: String) => {
       val allTags = tags.split(",")
       allTags.groupBy(identity).mapValues(_.length.toDouble / allTags.size)
     }
 
     //Computes the Inverse Document Frequency for each tag
-    val calculateIDF = (userTagsGroup: RDD[(String, String)]) => {
+    def calculateIDF = (userTagsGroup: RDD[(String, String)]) => {
       val userCount = userTagsGroup.count()
       userTagsGroup.flatMap { case (_, tags) => tags.split(",").distinct }
         .map((_, 1))
@@ -149,14 +149,14 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     */
 
     //Computes the dot product of two vectors: multiplies the target user’s score for each tag by the other user’s score for the same tag (or 0 if the tag is absent)
-    val numerator = (targetScores: Map[String, Double], otherScores: Map[String, Double]) =>
+    def numerator = (targetScores: Map[String, Double], otherScores: Map[String, Double]) =>
       targetScores.foldLeft(0.0) { case (acc, (tag, score)) => acc + score * otherScores.getOrElse(tag, 0.0) }
 
     //Computes the magnitude of a vector: computes the square root of the sum of the squares of all TF-IDF values for the vector
-    val denominator = (scoresMap: Map[String, Double]) => math.sqrt(scoresMap.values.map(x => x * x).sum)
+    def denominator = (scoresMap: Map[String, Double]) => math.sqrt(scoresMap.values.map(x => x * x).sum)
 
     //Computes cosine similarity
-    val cosineSimilarity = (target: Map[String, Double], other: Map[String, Double]) =>
+    def cosineSimilarity = (target: Map[String, Double], other: Map[String, Double]) =>
       numerator(target, other) / (denominator(target) * denominator(other))
 
     //Finds the top 3 similar users
