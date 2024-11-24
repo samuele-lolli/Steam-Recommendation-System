@@ -35,25 +35,25 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
 
-    // Joins datasets and filters out records without tags
+    // Join datasets and remove untagged games
     val merged = selectedRec.join(selectedGames, Seq("app_id"))
       .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
-    // Cleans and transforms the tags
+    // Clean and transform tags
     val cleanMerge = merged
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
       .cache()
 
-    // Aggregates tags for each user
+    // Create a list of tags for each single user
     val filteredData = cleanMerge
       .withColumn("words", split(col("tagsString"), ",")) // Splits tags by commas
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
 
-    // Explodes tags into a word-user format
+    // Explode tags for calculating TF-IDF
     val explodedDF = filteredData
       .withColumn("word", explode(col("words")))
       .select("user_id", "word")
@@ -74,23 +74,23 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   private def calculateTFIDF(explodedDF: DataFrame, filteredData: DataFrame): DataFrame = {
     val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
 
-    // Calculates term frequency (TF)
+    // Term Frequency (TF) calculation
     val tf = explodedDF.groupBy("user_id", "word")
       .agg(count("*").alias("term_count"))
       .join(wordsPerUser, "user_id")
       .withColumn("term_frequency", col("term_count") / col("total_words"))
 
-    // Calculates document frequency (DF)
+    // Document Frequency (DF) calculatio
     val dfDF = explodedDF.groupBy("word")
       .agg(countDistinct("user_id").alias("document_frequency"))
 
-    // Calculates the total number of users (documents)
+    // Total number of users (documents of TF-IDF calculation)
     val totalDocs = filteredData.count()
 
-    // Calculates IDF
+    // Calculate Inverse Document Frequency (IDF)
     val idfDF = dfDF.withColumn("idf", log(lit(totalDocs) / col("document_frequency")))
 
-    // Combines TF and IDF to calculate TF-IDF
+    // Combine TF and IDF to compute TF-IDF
     val tfidfValues = tf.join(idfDF, "word")
       .withColumn("tf_idf", col("term_frequency") * col("idf"))
       .select("user_id", "word", "tf_idf")
@@ -108,7 +108,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
     import spark.implicits._
 
-    // Filter the TF-IDF values for the target user and rename the column for clarity
+    // Take the target vector by filtering out target's TF-IDF score
     val targetVector = tfidfDF.filter(col("user_id") === targetUser)
       .select("word", "tf_idf")
       .withColumnRenamed("tf_idf", "target_tfidf")
@@ -143,7 +143,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val similarityDF = numerator.join(userNorms, "user_id")
       .withColumn("cosine_similarity", col("numerator") / (col("user_norm") * lit(targetNorm)))
 
-    // Order the users by similarity in descending order, limit to the top 3 users, and return their IDs as a list
+    // Order the users by similarity in descending order, and take the top 3 IDs in a list
     similarityDF.orderBy(desc("cosine_similarity"))
       .limit(3)
       .select("user_id")
