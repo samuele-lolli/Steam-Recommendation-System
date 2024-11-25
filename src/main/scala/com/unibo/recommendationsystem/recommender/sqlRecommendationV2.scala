@@ -23,8 +23,6 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL_HYBRID")
     println("Calculate final recommendation...")
     timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, userGamesData), "Generating Recommendations", "SQL_HYBRID")
-    topUsersSimilarity.take(3).foreach(println)
-    spark.stop()
   }
 
   /**
@@ -202,7 +200,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
    * @param top3Users  List of top similar user IDs.
    * @param targetUser The ID of the target user.
    * @param gamesTitles DataFrame containing game IDs and titles.
-   * @param cleanMerge Fully joined and cleaned data set.
+   * @param userGamesData Fully joined and cleaned data set.
    */
   def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, userGamesData: DataFrame): Unit = {
     val gamesByTopUsers = userGamesData.filter(col("user_id").isin(top3Users: _*))
