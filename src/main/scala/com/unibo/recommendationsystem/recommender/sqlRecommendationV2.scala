@@ -10,29 +10,31 @@ import scala.collection.Map
 class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   /**
-   * Generate game recommendations for a specific user.
+   * Computes TF-IDF values for all users based on their tags
    *
    * @param targetUser The ID of the user for whom recommendations are generated.
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (explodedDF, filteredData, gamesTitles, cleanMerge) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_HYBRID")
+    val (explodedDF, filteredData, gamesTitles, userGamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_HYBRID")
     println("Calculate term frequency and inverse document frequency...")
     val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL_HYBRID")
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL_HYBRID")
     println("Calculate final recommendation...")
-    timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, cleanMerge), "Generating Recommendations", "SQL_HYBRID")
+    timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, userGamesData), "Generating Recommendations", "SQL_HYBRID")
+    topUsersSimilarity.take(3).foreach(println)
+    spark.stop()
   }
 
   /**
-   * Preprocess the input data by cleaning, filtering, and transforming it.
+   * Preprocesses the input data to create intermediate dataframes needed for further calculations.
    *
    * @return A tuple containing:
-   *         - `explodedDF`: DataFrame with users and individual words (tags).
-   *         - `filteredData`: DataFrame with user-wise aggregated tags as arrays.
-   *         - `gamesTitles`: DataFrame with game IDs and titles.
-   *         - `cleanMerge`: Fully joined and cleaned data set.
+   *         - explodedDF: DataFrame with individual users and words (tags).
+   *         - filteredData: DataFrame with aggregated tags for each user.
+   *         - gamesTitles: DataFrame with game IDs and titles.
+   *         - userGamesData: Complete, cleaned, and merged dataset.
    */
   private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
 
@@ -40,12 +42,12 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
     val selectedGames = dataGames.select("app_id", "title")
 
     // Join datasets and remove untagged games
-    val merged = selectedRec.join(selectedGames, Seq("app_id"))
+    val userGamesData = selectedRec.join(selectedGames, Seq("app_id"))
       .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
     // Clean and transform tags, put a persist on the result
-    val cleanMerge = merged
+    val cleanMerge = userGamesData
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags"))) // Join tags with commas
       .drop("tags")
@@ -63,11 +65,39 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
 
     val gamesTitles = dataGames.select("app_id", "title")
 
-    (explodedDF, filteredData, gamesTitles, merged)
+    (explodedDF, filteredData, gamesTitles, userGamesData)
   }
 
+  /*
+   * explodedDF
+   * [53,world war ii]
+   * [53,strategy]
+   * [53,rts]
+   */
+
+  /*
+   * filteredData
+   * [53,WrappedArray(world war ii, strategy, rts, military, simulation, action, tactical, multiplayer, war, wargame, singleplayer, real time tactics, historical, realistic, open world, co-op, real-time, tanks, real-time with pause, replay value)]
+   * [85,WrappedArray(action, warhammer 40k, co-op, fps, shooter, adventure, online co-op, multiplayer, first-person, violent, atmospheric, sci-fi, gore, singleplayer, horror, games workshop, mature, space, aliens, free to play, superhero, mmorpg, massively multiplayer, character customization, action, comic book, rpg, adventure, controller, third person, multiplayer, combat, beat 'em up, open world, exploration, pvp, fighting, online co-op, co-op)]
+   * [133,WrappedArray(stealth, action, co-op, third person, multiplayer, singleplayer, shooter, adventure, tactical, third-person shooter, online co-op, parkour, fps, story rich, controller, strategy, atmospheric, first-person, rpg, mature, racing, combat racing, automobile sim, destruction, multiplayer, vehicular combat, great soundtrack, classic, action, singleplayer, music, driving, arcade, physics, simulation, local multiplayer, atmospheric, funny, comedy, casual)]
+   */
+
+  /*
+   * gamesTitles
+   * [13500,Prince of Persia: Warrior Within™]
+   * [22364,BRINK: Agents of Change]
+   * [113020,Monaco: What's Yours Is Mine]
+   */
+
+  /*
+   * userGamesData
+   * [3490,6215812,Venice Deluxe,WrappedArray(Casual)]
+   * [3490,2113752,Venice Deluxe,WrappedArray(Casual)]
+   * [4900,12062841,Zen of Sudoku,WrappedArray(Casual, Indie, Puzzle, Free to Play)]
+   */
+
   /**
-   * Calculate Term Frequency-Inverse Document Frequency (TF-IDF) values for words in the dataset.
+   * Computes TF-IDF values for all users based on their tags
    *
    * @param explodedDF   DataFrame with user-word pairs.
    * @param filteredData DataFrame with user-wise aggregated tags as arrays.
@@ -100,9 +130,15 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
 
     tfidfDF
   }
+  /*
+   * tfidfDF
+   * [392,anime,0.08031574163308791]
+   * [1645,anime,0.02677191387769597]
+   * [1699,anime,0.006490160940047508]
+   */
 
   /**
-   * Compute the top 3 users with the highest cosine similarity to the target user.
+   * Computes cosine similarity between the target user and all other users
    *
    * @param tfidfDF    DataFrame with TF-IDF scores for each user and word.
    * @param targetUser The ID of the target user.
@@ -153,19 +189,26 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
     top3Users.select("user_id").collect().map(row => row.getAs[Int]("user_id")).toList
   }
 
+  /*
+   * top3Users
+   * 8971360
+   * 11277999
+   * 9911449
+   */
+
   /**
-   * Generate final recommendations based on similar users and exclude games already played by the target user.
+   * Generates and prints final game recommendations for a target user based on games played by similar users
    *
    * @param top3Users  List of top similar user IDs.
    * @param targetUser The ID of the target user.
    * @param gamesTitles DataFrame containing game IDs and titles.
    * @param cleanMerge Fully joined and cleaned data set.
    */
-  def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, cleanMerge: DataFrame): Unit = {
-    val gamesByTopUsers = cleanMerge.filter(col("user_id").isin(top3Users: _*))
+  def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, userGamesData: DataFrame): Unit = {
+    val gamesByTopUsers = userGamesData.filter(col("user_id").isin(top3Users: _*))
       .select("app_id", "user_id")
 
-    val gamesByTargetUser = cleanMerge.filter(col("user_id") === targetUser)
+    val gamesByTargetUser = userGamesData.filter(col("user_id") === targetUser)
       .select("app_id")
 
     val recommendedGames = gamesByTopUsers.join(gamesByTargetUser, Seq("app_id"), "left_anti")
