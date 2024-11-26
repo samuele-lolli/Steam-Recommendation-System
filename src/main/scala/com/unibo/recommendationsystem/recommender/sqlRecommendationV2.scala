@@ -151,11 +151,11 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
       if (magnitude1 == 0.0 || magnitude2 == 0.0) 0.0 else dotProductFunc(vector1, vector2) / (magnitude1 * magnitude2)
     }
 
-    val dotProduct = (v1: Map[String, Double], v2: Map[String, Double]) => {
+    def dotProduct = (v1: Map[String, Double], v2: Map[String, Double]) => {
       v1.foldLeft(0.0) { case (acc, (key, value)) => acc + v2.getOrElse(key, 0.0) * value }
     }
 
-    val magnitude = (vector: Map[String, Double]) => math.sqrt(vector.values.map(value => value * value).sum)
+    def magnitude = (vector: Map[String, Double]) => math.sqrt(vector.values.map(value => value * value).sum)
 
     def rowToTfIdfMap(row: Row): Map[String, Double] = {
       row.getAs[Seq[Row]]("tags").map(tag => tag.getString(0) -> tag.getDouble(1)).toMap
