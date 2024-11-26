@@ -3,6 +3,7 @@ package com.unibo.recommendationsystem.recommender
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.storage.StorageLevel
 
 class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
@@ -14,13 +15,21 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
     val (explodedDF, filteredData, gamesTitles, userGamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_FULL")
+
     println("Calculating term frequency and inverse document frequency...")
     val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL_FULL")
+
     println("Calculating cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL_FULL")
+
     println("Calculating final recommendation...")
     timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, userGamesData), "Generating Recommendations", "SQL_FULL")
+    filteredData.unpersist()
+    explodedDF.unpersist()
+    tfidfValues.unpersist()
+    userGamesData.unpersist()
   }
+
 
   /**
    * Preprocesses the input data to create intermediate dataframes needed for further calculations.
@@ -45,7 +54,6 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
-      .cache()
 
     // Create a list of tags for each single user
     val filteredData = cleanMerge
@@ -57,7 +65,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val explodedDF = filteredData
       .withColumn("word", explode(col("words")))
       .select("user_id", "word")
-      .cache()
+      .persist(StorageLevel.MEMORY_AND_DISK)
 
     val gamesTitles = dataGames.select("app_id", "title")
 
@@ -141,7 +149,6 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    * [6658,anime,0.08031574163308791]
    * [7880,anime,0.08031574163308791]
    */
-
 
 
   /**

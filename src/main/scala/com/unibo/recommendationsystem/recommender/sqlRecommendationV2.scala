@@ -23,6 +23,12 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL_HYBRID")
     println("Calculate final recommendation...")
     timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, userGamesData), "Generating Recommendations", "SQL_HYBRID")
+
+    explodedDF.unpersist()
+    filteredData.unpersist()
+    tfidfValues.unpersist()
+    gamesTitles.unpersist()
+    userGamesData.unpersist()
   }
 
   /**
@@ -49,17 +55,17 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags"))) // Join tags with commas
       .drop("tags")
-      .persist(StorageLevel.MEMORY_AND_DISK)
 
     // Create a list of tags for each single user
     val filteredData = cleanMerge
       .withColumn("words", split(col("tagsString"), ",")) // Split tags by commas
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
+      .persist(StorageLevel.MEMORY_AND_DISK)
 
     // Explode tags for calculating TF-IDF
     val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
-      //.persist(StorageLevel.MEMORY_AND_DISK)
+      .persist(StorageLevel.MEMORY_AND_DISK)
 
     val gamesTitles = dataGames.select("app_id", "title")
 

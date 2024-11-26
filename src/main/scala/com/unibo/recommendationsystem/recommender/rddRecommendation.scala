@@ -3,6 +3,7 @@ package com.unibo.recommendationsystem.recommender
 import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.storage.StorageLevel
 
 class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
@@ -20,6 +21,10 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val top3SimilarUsers = timeUtils.time(computeCosineSimilarity(targetUser, tfidfUserTags), "Getting Similar Users", "RDD")
     println("Calculate final recommendation...")
     timeUtils.time(generateFinalRecommendations(appIdUserDetails, top3SimilarUsers, gamesData, targetUser), "Generating Recommendations", "RDD")
+
+    tfidfUserTags.unpersist()
+    appIdUserDetails.unpersist()
+    userTagsGroup.unpersist()
   }
 
   /**
@@ -61,7 +66,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       val tags = broadcastTagMap.value.getOrElse(appId, "")
       (appId, tags, userId)
     }.filter(_._2.nonEmpty)
-      .cache()
+      .persist(StorageLevel.MEMORY_AND_DISK)
     /*
     (1544020,horror,sci-fi,survival horror,third-person shooter,space,shooter,action-adventure,third person,pve,3d,action,story rich,linear,realistic,adventure,robots,cinematic,dark,futuristic,shoot 'em up,11608913)
     (1325200,rpg,action,souls-like,character customization,difficult,co-op,jrpg,multiplayer,fantasy,dark fantasy,historical,story rich,violent,singleplayer,hack and slash,dark,medieval,atmospheric,gore,female protagonist,11593837)
@@ -75,7 +80,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .flatMap { case (_, tags, userId) => tags.split(",").map(tag => (userId, tag)) }
       .reduceByKey(_ + "," + _)
       .filter(_._2.nonEmpty)
-      .cache()
+      .persist(StorageLevel.MEMORY_AND_DISK)
 
     //Extracts titles of the apps for return them in recommendation
     val gamesTitles = dataGames.rdd.map(row => (row.getAs[Int]("app_id"), row.getAs[String]("title")))

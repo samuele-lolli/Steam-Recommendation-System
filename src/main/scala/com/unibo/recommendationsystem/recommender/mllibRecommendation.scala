@@ -5,6 +5,7 @@ import org.apache.spark.ml.feature.{HashingTF, IDF}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.storage.StorageLevel
 
 class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
@@ -23,6 +24,11 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "MlLib")
     println("Calculate final recommendation...")
     timeUtils.time(generateFinalRecommendations(userGamesData, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
+
+    aggregateData.unpersist()
+    userGamesData.unpersist()
+    tfidfValues.unpersist()
+    topUsersSimilarity.unpersist()
   }
 
   /**
@@ -46,14 +52,13 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
-      .cache()
-
+      .persist(StorageLevel.MEMORY_AND_DISK)
     val tokenizedData = cleanMerge.withColumn("words", split(col("tagsString"), ","))
 
     val aggregateData = tokenizedData
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
-      .cache()
+      .persist(StorageLevel.MEMORY_AND_DISK)
 
     (aggregateData, cleanMerge)
   }
@@ -90,11 +95,13 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
    */
   private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
     val hashingTF = new HashingTF().setInputCol("words").setOutputCol("hashedFeatures").setNumFeatures(20000)
-    val featurizedData = hashingTF.transform(aggregateData).cache()
+    val featurizedData = hashingTF.transform(aggregateData).persist(StorageLevel.MEMORY_AND_DISK)
 
     val idf = new IDF().setInputCol("hashedFeatures").setOutputCol("features")
     val idfModel = idf.fit(featurizedData)
-    idfModel.transform(featurizedData)
+    val result = idfModel.transform(featurizedData)
+    featurizedData.unpersist()
+    result
   }
   /*
    * [463,WrappedArray(puzzle, casual, indie, 2d, physics, relaxing, singleplayer, minimalist, short, fast-paced, cute, trading card game, strategy, logic, psychological horror, difficult, action, education, horror, beautiful, psychological horror, multiplayer, free to play, battle royale, pvp, action, first-person, parkour, 3d, fps, platformer, arcade, physics, combat, casual, nudity, runner, racing, 3d platformer, sci-fi),(20000,[349,776,2291,2768,4599,5049,5530,5566,5966,6230,7421,7548,7845,8023,8218,8250,9170,9341,9770,10405,11262,11273,11440,11712,11956,12111,13751,14055,14142,14276,14443,14942,16633,17031,17798,18809],[1.0,2.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,2.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,1.0,1.0,1.0]),(20000,[349,776,2291,2768,4599,5049,5530,5566,5966,6230,7421,7548,7845,8023,8218,8250,9170,9341,9770,10405,11262,11273,11440,11712,11956,12111,13751,14055,14142,14276,14443,14942,16633,17031,17798,18809],[1.7302931578817133,3.2127443925768318,0.8394589959004939,3.010483459454005,1.055022232707697,2.4180155088599298,3.3222262929471063,1.2988803766664814,1.3305530075463046,2.162867319853891,1.8442557278718714,1.3786699662036868,1.2280896704098183,4.419749903150982,3.7323474712556974,1.8422450147669338,0.8307478616653239,3.665163626523716,0.15870374729806824,2.4407820725061584,2.379376998652651,2.7517190390805983,0.5036136011040446,1.1331072326269802,2.949945816108345,2.160505153283781,1.0733073796519677,1.713318878009665,2.3190328451378446,3.753340030663497,2.797025744413799,1.3422542741250956,0.4956754550369963,1.950770095402198,0.3752726789656653,1.8245946488850548])]
@@ -133,7 +140,6 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
       .select("user_id", "cosine_sim")
       .orderBy($"cosine_sim".desc)
       .limit(3)
-
  }
 
   /*
