@@ -10,7 +10,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Computes TF-IDF values for all users based on their tags
    *
-   * @param targetUser ID of the user for whom recommendations are generated.
+   * @param targetUser The ID of the user for which we are generating recommendations
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
@@ -44,24 +44,25 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
 
-    // Join datasets and remove untagged games
-    val userGamesData = selectedRec.join(selectedGames, Seq("app_id"))
+    //Join datasets and remove games with zero tags
+    val userGamesData = selectedRec
+      .join(selectedGames, Seq("app_id"))
       .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
-    // Clean and transform tags
-    val cleanMerge = userGamesData
+    //Clean and transform tags
+    val userGamePairs = userGamesData
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
 
-    // Create a list of tags for each single user
-    val filteredData = cleanMerge
-      .withColumn("words", split(col("tagsString"), ",")) // Splits tags by commas
+    //Create a list of tags for each single user
+    val filteredData = userGamePairs
+      .withColumn("words", split(col("tagsString"), ",")) //Splits tags with commas
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
 
-    // Explode tags for calculating TF-IDF
+    //Explode tags to calculate TF-IDF
     val explodedDF = filteredData
       .withColumn("word", explode(col("words")))
       .select("user_id", "word")
@@ -117,23 +118,23 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   private def calculateTFIDF(explodedDF: DataFrame, filteredData: DataFrame): DataFrame = {
     val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
 
-    // Term Frequency (TF) calculation
+    //TF
     val tf = explodedDF.groupBy("user_id", "word")
       .agg(count("*").alias("term_count"))
       .join(wordsPerUser, "user_id")
       .withColumn("term_frequency", col("term_count") / col("total_words"))
 
-    // Document Frequency (DF) calculatiom
+    //DF
     val dfDF = explodedDF.groupBy("word")
       .agg(countDistinct("user_id").alias("document_frequency"))
 
-    // Total number of users (documents of TF-IDF calculation)
+    //Users
     val totalDocs = filteredData.count()
 
-    // Calculate Inverse Document Frequency (IDF)
+    //IDF
     val idfDF = dfDF.withColumn("idf", log(lit(totalDocs) / col("document_frequency")))
 
-    // Combine TF and IDF to compute TF-IDF
+    //TFIDF
     val tfidfValues = tf.join(idfDF, "word")
       .withColumn("tf_idf", col("term_frequency") * col("idf"))
       .select("user_id", "word", "tf_idf")
@@ -161,38 +162,36 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
     import spark.implicits._
 
-    // Take the target vector by filtering out target's TF-IDF score
     val targetVector = tfidfDF.filter(col("user_id") === targetUser)
       .select("word", "tf_idf")
       .withColumnRenamed("tf_idf", "target_tfidf")
 
-    // Join the TF-IDF dataset with the target user's vector based on the "word" column
-    // Exclude the target user's data and compute the dot product of TF-IDF values
+    //Join the TF-IDF dataset with the target user's vector based on the "word" column
     val joinedDF = tfidfDF
       .join(targetVector, "word")
       .filter(col("user_id") =!= targetUser)
       .withColumn("dot_product", col("tf_idf") * col("target_tfidf"))
 
-    // Aggregate the dot product for each user to compute the numerator of the cosine similarity formula
+    //Aggregate the dot product for each user to compute the numerator of the cosine similarity formula
     val numerator = joinedDF.groupBy("user_id")
       .agg(sum("dot_product").alias("numerator"))
 
-    // Compute the squared TF-IDF values for each user to calculate the norm
+    //Compute the squared TF-IDF values for each user to calculate the norm
     val normDF = tfidfDF.withColumn("squared_tfidf", col("tf_idf") * col("tf_idf"))
 
-    // Aggregate the squared values and take the square root to compute the norm for each user
+    //Aggregate the squared values and take the square root to compute the norm for each user
     val userNorms = normDF.groupBy("user_id")
       .agg(sqrt(sum("squared_tfidf")).alias("user_norm"))
 
-    // Compute the norm for the target user by filtering their data
+    //Compute the norm for the target user by filtering their data
     val targetNorm = normDF.filter(col("user_id") === targetUser)
       .select(sqrt(sum("squared_tfidf")).alias("target_norm"))
       .as[Double]
       .collect()
-      .head // Extract the norm value as a scalar
+      .head
 
-    // Join the numerator with user norms and calculate the cosine similarity
-    // Cosine similarity = numerator / (norm of target user * norm of each user)
+    //Join the numerator with user norms and calculate the cosine similarity
+    //Cosine similarity = numerator / (norm of target user * norm of each user)
     val similarityDF = numerator.join(userNorms, "user_id")
       .withColumn("cosine_similarity", col("numerator") / (col("user_norm") * lit(targetNorm)))
 

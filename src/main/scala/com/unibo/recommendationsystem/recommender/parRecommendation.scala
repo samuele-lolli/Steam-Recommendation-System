@@ -17,7 +17,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   /**
    * Computes TF-IDF values for all users based on their tags
    *
-   * @param targetUser Int, The user ID for whom the recommendations are being generated
+   * @param targetUser Int, The ID of the user for which we are generating recommendations
    *
    */
   def recommend(targetUser: Int): Unit = {
@@ -107,13 +107,13 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * @return ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    */
   private def calculateTFIDF(userTagsMap: ParSeq[(Int, String)]): ParMap[Int, Map[String, Double]] = {
-    //Takes user's tags as input and calculates the Term Frequency for each tag
+    //TF
     val calculateTF = (userWords: String) => {
       val wordsSplit = userWords.split(",")
       wordsSplit.groupBy(identity).mapValues(_.length.toDouble / wordsSplit.length)
     }
 
-    //Computes the Inverse Document Frequency for each tag
+    //IDF
     val calculateIDF = (groupedWords: ParMap[Int, String]) => {
       val userCount = groupedWords.size
       groupedWords.values
@@ -129,7 +129,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
     val idfValues: Map[String, Double] = calculateIDF(groupedUserWords).seq
 
-    //Calculates the TF-IDF values for each tag for every user
+    //TFIDF
     groupedUserWords
       .map { case (user, words) =>
         val tfValues = calculateTF(words)
@@ -154,26 +154,22 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   private def computeCosineSimilarity(tfidf: ParMap[Int, Map[String, Double]], targetUser: Int): List[Int] = {
 
     def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double]): Double = {
-      //Computes the dot product of two vectors
       val numerator = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
-      //Computes the product of magnitudes of the two vectors)
       val denominator = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
       if (denominator == 0) 0.0 else numerator / denominator
     }
 
-    //Takes the target user's vector
     val targetUserScores = tfidf(targetUser)
 
-    //Find the top 3 similar users
     val topUsers = tfidf.seq.view
       .filter { case (key, _) => key != targetUser }
       .par
       .map { case (key, vector) =>
         key -> cosineSimilarity(targetUserScores, vector)
       }
-      .toList // Convert to list for further processing
-      .sortBy(-_._2) // Sort by similarity score in descending order
-      .take(3) // Take the top 3 most similar users
+      .toList           //Convert to list for further processing
+      .sortBy(-_._2)    //Sort by similarity score in descending order
+      .take(3)          //Take the top 3 most similar users
       .map(_._1)
 
     topUsers
@@ -208,7 +204,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * Loads user recommendations from a CSV file
    *
    * @param path The file path to the recommendations file
-   * @return A map that returns an array of games recommended by each user
+   * @return A map of an array of games recommended by each user
    */
   def loadRecommendations(path: String): Map[Int, Array[Int]] = {
     Using.resource(Source.fromFile(path)) { source =>
@@ -226,7 +222,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
           usersRec.put(user, updatedList)
         }
       }
-      //Convert the mutable map to an immutable Map[Int, Array[Int]]
+      //Convert the mutable map to an immutable
       usersRec.map { case (user, appIds) =>
         (user.toInt, appIds.reverse.toArray)
       }.toMap
@@ -240,7 +236,6 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * @return A map of appId to game titles
    */
   private def loadDataGames(path: String): Map[Int, String] = {
-    //Read the file and process each line
     val lines = Using.resource(Source.fromFile(path)) { source =>
       source.getLines().drop(1).toSeq.par
     }
@@ -263,18 +258,15 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    * @return A map of appId to arrays of tags
    */
   def loadMetadata(path: String): Map[Int, Array[String]] = {
-    //Read the entire JSON file
     val source = Source.fromFile(path)
     implicit val formats: DefaultFormats.type = DefaultFormats
-    // Process each line of the JSON file
     val appIdsAndTags = source.getLines().foldLeft(Map.empty[Int, Array[String]]) {
       case (acc, line) =>
         val json = JsonMethods.parse(line)
         val appId = (json \ "app_id").extract[Int]
-        val tags = (json \ "tags").extract[Seq[String]].toArray // Convert tags to Array[String]
-        acc + (appId -> tags) // Add appId and tags to the accumulator map
+        val tags = (json \ "tags").extract[Seq[String]].toArray
+        acc + (appId -> tags)
     }
-    //Close the file after processing
     source.close()
     appIdsAndTags
   }

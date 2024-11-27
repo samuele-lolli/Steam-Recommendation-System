@@ -12,21 +12,21 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
   /**
    * Computes TF-IDF values for all users based on their tags
    *
-   * @param targetUser Int, The user ID for whom the recommendations are being generated
+   * @param targetUser Int, The ID of the user for which we are generating recommendations
    *
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (aggregateData, userGamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
+    val (aggregateData, userGamePairs) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
     println("Calculate term frequency and inverse document frequency...")
     val tfidfValues = timeUtils.time(calculateTFIDF(aggregateData), "Calculating TF-IDF", "MlLib")
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "MlLib")
     println("Calculate final recommendation...")
-    timeUtils.time(generateFinalRecommendations(userGamesData, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
+    timeUtils.time(generateFinalRecommendations(userGamePairs, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
 
     aggregateData.unpersist()
-    userGamesData.unpersist()
+    userGamePairs.unpersist()
     tfidfValues.unpersist()
     topUsersSimilarity.unpersist()
   }
@@ -43,24 +43,24 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
 
-    val merged = selectedRec
+    val userGamesData = selectedRec
       .join(selectedGames, Seq("app_id"))
       .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
-    val cleanMerge = merged
+    val userGamePairs = userGamesData
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
       .persist(StorageLevel.MEMORY_AND_DISK)
-    val tokenizedData = cleanMerge.withColumn("words", split(col("tagsString"), ","))
+    val ugpTokenized = userGamePairs.withColumn("words", split(col("tagsString"), ","))
 
-    val aggregateData = tokenizedData
+    val aggregateData = ugpTokenized
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
       .persist(StorageLevel.MEMORY_AND_DISK)
 
-    (aggregateData, cleanMerge)
+    (aggregateData, userGamePairs)
   }
     /*
      * aggregateData
@@ -74,23 +74,16 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
      * [4900,10243247,Zen of Sudoku,casual,indie,puzzle,free to play]
     */
 
-
-
   /**
    * Computes TF-IDF values for all users based on their tags
    *
    * @param aggregateData that contains each user and their tags with associated TF-IDF values
-   * @return DataFrame (Int, Array[String], (Int, Array[Int], Array[Double]), (Int, Array[Int], Array[Double])) with these elements:
-   *          - Int User ID
-   *          - Array[Int] of original tags
-   *          - (Int, Array[Int], Array[Double]) which contains
-   *              - Int Features number
-   *              - Array[Int] Tags indexes after hashing
-   *              - Array[Double] Tags scores TF
-   *          - (Int, Array[Int], Array[Double]) which contains
-   *              - Int Features number
-   *              - Array[Int] Tags indexes after hashing
-   *              - Array[Double] Tags scores TF-IDF
+   * @return DataFrame with:
+   *          - user_id: integer
+   *          - words: array
+   *            - element: string original tag
+   *          - hashedFeatures: vector
+   *          - Features: vector
    *
    */
   private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
@@ -153,15 +146,15 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
   /**
    * Generates and prints final game recommendations for a target user based on games played by similar users
    *
-   * @param userGamesData [Int, Int, String, String, ...] that contains game/user associations, game title and its relative tags
-   * @param usersSimilarity List[Int], list of IDs of the most similar users
+   * @param userGamePairs [Int, Int, String, String, ...] that contains game/user associations, game title and tags
+   * @param usersSimilarity List[Int], list of IDs of the most similar users. 3 items
    * @param targetUser Int, the ID of the target user
    *
    */
-  private def generateFinalRecommendations(userGamesData: DataFrame, usersSimilarity: DataFrame, targetUser: Int): Unit = {
+  private def generateFinalRecommendations(userGamePairs: DataFrame, usersSimilarity: DataFrame, targetUser: Int): Unit = {
     import spark.implicits._
 
-    val titlesPlayedByTargetUser = userGamesData
+    val titlesPlayedByTargetUser = userGamePairs
       .filter($"user_id" === targetUser)
       .select("title")
       .distinct()
@@ -174,7 +167,7 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
       .collect()
       .toSet
 
-    val finalRecommendations = userGamesData
+    val finalRecommendations = userGamePairs
       .filter(col("user_id").isin(userIdsToFind.toSeq: _*) && !col("title").isin(titlesPlayedByTargetUser: _*))
       .groupBy("app_id", "title")
       .agg(collect_list("user_id").alias("users"))

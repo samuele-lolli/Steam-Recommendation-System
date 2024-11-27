@@ -12,7 +12,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
   /**
    * Computes TF-IDF values for all users based on their tags
    *
-   * @param targetUser The ID of the user for whom recommendations are generated.
+   * @param targetUser The ID of the user for which we are generating recommendations
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
@@ -45,25 +45,25 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
 
-    // Join datasets and remove untagged games
+    //Join datasets and remove games with zero tags
     val userGamesData = selectedRec.join(selectedGames, Seq("app_id"))
       .join(metadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
 
-    // Clean and transform tags, put a persist on the result
-    val cleanMerge = userGamesData
+    //Clean and transform tags
+    val userGamePairs = userGamesData
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags"))) // Join tags with commas
       .drop("tags")
 
-    // Create a list of tags for each single user
-    val filteredData = cleanMerge
+    //Create a list of tags for each single user
+    val filteredData = userGamePairs
       .withColumn("words", split(col("tagsString"), ",")) // Split tags by commas
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
       .persist(StorageLevel.MEMORY_AND_DISK)
 
-    // Explode tags for calculating TF-IDF
+    //Explode tags to calculate TF-IDF
     val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
       .persist(StorageLevel.MEMORY_AND_DISK)
 
@@ -110,24 +110,24 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
   private def calculateTFIDF(explodedDF: DataFrame, filteredData: DataFrame): DataFrame = {
     val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
 
-    // Term Frequency (TF) calculation
+    //TF
     val tf = explodedDF.groupBy("user_id", "word")
       .agg(count("*").alias("term_count"))
       .join(wordsPerUser, "user_id")
       .withColumn("term_frequency", col("term_count") / col("total_words"))
 
-    // Document Frequency (DF) calculation
+    //DF
     val dfDF = explodedDF.groupBy("word")
       .agg(countDistinct("user_id").alias("document_frequency"))
 
-    // Total number of users (documents of TF-IDF calculation)
+    //Users
     val totalDocs = filteredData.count()
 
-    // Calculate Inverse Document Frequency (IDF)
+    //IDF
     dfDF.createOrReplaceTempView("dfDF")
     val idfDF = spark.sql(s"""SELECT word, log($totalDocs / document_frequency) AS idf FROM dfDF""")
 
-    // Combine TF and IDF to compute TF-IDF
+    //TFIDF
     val tfidfDF = tf.join(idfDF, "word")
       .withColumn("tf_idf", col("term_frequency") * col("idf"))
       .select("user_id", "word", "tf_idf")
@@ -144,13 +144,12 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
   /**
    * Computes cosine similarity between the target user and all other users
    *
-   * @param tfidfDF    DataFrame with TF-IDF scores for each user and word.
+   * @param tfidfDF DataFrame with TF-IDF scores for each user and word.
    * @param targetUser The ID of the target user.
    * @return List of user IDs with the highest similarity.
    */
   private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
 
-    // Helper function to calculate cosine similarity
     def calculateCosineSimilarity(vector1: Map[String, Double], vector2: Map[String, Double], dotProductFunc: (Map[String, Double], Map[String, Double]) => Double, magnitudeFunc: Map[String, Double] => Double): Double = {
       val magnitude1 = magnitudeFunc(vector1)
       val magnitude2 = magnitudeFunc(vector2)
