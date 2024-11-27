@@ -10,7 +10,7 @@ import org.apache.spark.storage.StorageLevel
 class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   /**
-   * Computes TF-IDF values for all users based on their tags
+   * (MLlib SQL version) Generates personalized recommendations for a target user
    *
    * @param targetUser Int, The ID of the user for which we are generating recommendations
    *
@@ -53,12 +53,15 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
       .persist(StorageLevel.MEMORY_AND_DISK)
+    //.cache()
+
     val ugpTokenized = userGamePairs.withColumn("words", split(col("tagsString"), ","))
 
     val aggregateData = ugpTokenized
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
       .persist(StorageLevel.MEMORY_AND_DISK)
+    //.cache()
 
     (aggregateData, userGamePairs)
   }
@@ -88,7 +91,7 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
    */
   private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
     val hashingTF = new HashingTF().setInputCol("words").setOutputCol("hashedFeatures").setNumFeatures(20000)
-    val featurizedData = hashingTF.transform(aggregateData).persist(StorageLevel.MEMORY_AND_DISK)
+    val featurizedData = hashingTF.transform(aggregateData).persist(StorageLevel.MEMORY_AND_DISK)//.cache()
 
     val idf = new IDF().setInputCol("hashedFeatures").setOutputCol("features")
     val idfModel = idf.fit(featurizedData)

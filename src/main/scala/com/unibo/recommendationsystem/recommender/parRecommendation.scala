@@ -1,7 +1,7 @@
 package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
-import org.json4s.DefaultFormats
+import org.json4s.{DefaultFormats, TypeInfo}
 import org.json4s.jackson.JsonMethods
 
 import scala.collection.concurrent.TrieMap
@@ -15,7 +15,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   private val metadata: Map[Int, Array[String]] = loadMetadata(metadataPath)
 
   /**
-   * Computes TF-IDF values for all users based on their tags
+   * (Parallel version) Generates personalized recommendations for a target user
    *
    * @param targetUser Int, The ID of the user for which we are generating recommendations
    *
@@ -108,32 +108,31 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    */
   private def calculateTFIDF(userTagsMap: ParSeq[(Int, String)]): ParMap[Int, Map[String, Double]] = {
     //TF
-    val calculateTF = (userWords: String) => {
-      val wordsSplit = userWords.split(",")
-      wordsSplit.groupBy(identity).mapValues(_.length.toDouble / wordsSplit.length)
+    val calculateTF = (tags: String) => {
+      val allTags = tags.split(",")
+      allTags.groupBy(identity).mapValues(_.length.toDouble / allTags.length)
     }
 
     //IDF
-    val calculateIDF = (groupedWords: ParMap[Int, String]) => {
-      val userCount = groupedWords.size
-      groupedWords.values
+    val calculateIDF = (userTagsMap: ParMap[Int, String]) => {
+      val userCount = userTagsMap.size
+      userTagsMap.values
         .par
         .flatMap(_.split(",").distinct)
         .groupBy(identity)
         .map { case (word, occurrences) => (word, math.log(userCount.toDouble / occurrences.size)) }
     }
 
-    val groupedUserWords: ParMap[Int, String] = userTagsMap
+    val userTagsMap: ParMap[Int, String] = userTagsMap
       .groupBy(_._1)
       .mapValues(_.map(_._2).mkString(","))
 
-    val idfValues: Map[String, Double] = calculateIDF(groupedUserWords).seq
+    val idfValuesTag: Map[String, Double] = calculateIDF(userTagsMap).seq
 
     //TFIDF
-    groupedUserWords
-      .map { case (user, words) =>
+    userTagsMap      .map { case (user, words) =>
         val tfValues = calculateTF(words)
-        user -> tfValues.map { case (word, tf) => word -> tf * idfValues.getOrElse(word, 0.0) }
+        user -> tfValues.map { case (word, tf) => word -> tf * idfValuesTag.getOrElse(word, 0.0) }
       }
   }
   /*
@@ -147,25 +146,25 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
   /**
    * Computes cosine similarity between the target user and all other users
    *
-   * @param tfidf ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
+   * @param tfidfUserTags ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
    * @param targetUser Int, the ID of the target user
    * @return A list of the top 3 most similar user IDs
    */
-  private def computeCosineSimilarity(tfidf: ParMap[Int, Map[String, Double]], targetUser: Int): List[Int] = {
+  private def computeCosineSimilarity(tfidfUserTags: ParMap[Int, Map[String, Double]], targetUser: Int): List[Int] = {
 
-    def cosineSimilarity(v1: Map[String, Double], v2: Map[String, Double]): Double = {
-      val numerator = v1.keys.map(k => v1.getOrElse(k, 0.0) * v2.getOrElse(k, 0.0)).sum
-      val denominator = math.sqrt(v1.values.map(v => v * v).sum) * math.sqrt(v2.values.map(v => v * v).sum)
+    def cosineSimilarity(targetUserScores: Map[String, Double], otherUserScores: Map[String, Double]): Double = {
+      val numerator = targetUserScores.keys.map(k => targetUserScores.getOrElse(k, 0.0) * otherUserScores.getOrElse(k, 0.0)).sum
+      val denominator = math.sqrt(targetUserScores.values.map(v => v * v).sum) * math.sqrt(otherUserScores.values.map(v => v * v).sum)
       if (denominator == 0) 0.0 else numerator / denominator
     }
 
-    val targetUserScores = tfidf(targetUser)
+    val targetUserScores = tfidfUserTags(targetUser)
 
-    val topUsers = tfidf.seq.view
+    val topUsers = tfidfUserTags.seq.view
       .filter { case (key, _) => key != targetUser }
       .par
-      .map { case (key, vector) =>
-        key -> cosineSimilarity(targetUserScores, vector)
+      .map { case (key, otherUserScores) =>
+        key -> cosineSimilarity(targetUserScores, otherUserScores)
       }
       .toList           //Convert to list for further processing
       .sortBy(-_._2)    //Sort by similarity score in descending order

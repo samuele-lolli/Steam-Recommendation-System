@@ -10,7 +10,7 @@ import scala.collection.Map
 class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   /**
-   * Computes TF-IDF values for all users based on their tags
+   * (SQL + ScalaCollection.Map version) Generates personalized recommendations for a target user
    *
    * @param targetUser The ID of the user for which we are generating recommendations
    */
@@ -55,6 +55,8 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags"))) // Join tags with commas
       .drop("tags")
+      //.persist(StorageLevel.MEMORY_AND_DISK)
+
 
     //Create a list of tags for each single user
     val filteredData = userGamePairs

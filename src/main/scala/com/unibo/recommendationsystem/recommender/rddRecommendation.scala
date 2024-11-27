@@ -8,7 +8,7 @@ import org.apache.spark.storage.StorageLevel
 class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   /**
-   * Computes TF-IDF values for all users based on their tags
+   * (RDD version) Generates personalized recommendations for a target user
    *
    * @param targetUser Int, The ID of the user for which we are generating recommendations
    */
@@ -66,7 +66,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       val tags = broadcastTagMap.value.getOrElse(appId, "")
       (appId, tags, userId)
     }.filter(_._2.nonEmpty)
-      .persist(StorageLevel.MEMORY_AND_DISK)
+      .persist(StorageLevel.MEMORY_AND_DISK)//.cache()
     /*
     (1544020,horror,sci-fi,survival horror,third-person shooter,space,shooter,action-adventure,third person,pve,3d,action,story rich,linear,realistic,adventure,robots,cinematic,dark,futuristic,shoot 'em up,11608913)
     (1325200,rpg,action,souls-like,character customization,difficult,co-op,jrpg,multiplayer,fantasy,dark fantasy,historical,story rich,violent,singleplayer,hack and slash,dark,medieval,atmospheric,gore,female protagonist,11593837)
@@ -80,7 +80,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .flatMap { case (_, tags, userId) => tags.split(",").map(tag => (userId, tag)) }
       .reduceByKey(_ + "," + _)
       .filter(_._2.nonEmpty)
-      .persist(StorageLevel.MEMORY_AND_DISK)
+      .persist(StorageLevel.MEMORY_AND_DISK)//.cache()
 
     //Extracts titles of the apps to use them in ifnal recommendation
     val gamesTitles = dataGames.rdd.map(row => (row.getAs[Int]("app_id"), row.getAs[String]("title")))

@@ -8,7 +8,7 @@ import org.apache.spark.storage.StorageLevel
 class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
 
   /**
-   * Computes TF-IDF values for all users based on their tags
+   * (SQL version) Generates personalized recommendations for a target user
    *
    * @param targetUser The ID of the user for which we are generating recommendations
    */
@@ -55,6 +55,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tagsString", concat_ws(",", col("tags")))
       .drop("tags")
+    //.cache()
 
     //Create a list of tags for each single user
     val filteredData = userGamePairs
@@ -67,6 +68,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .withColumn("word", explode(col("words")))
       .select("user_id", "word")
       .persist(StorageLevel.MEMORY_AND_DISK)
+    //.cache()
 
     val gamesTitles = dataGames.select("app_id", "title")
 
