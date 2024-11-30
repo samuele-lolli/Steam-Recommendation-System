@@ -108,29 +108,34 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    */
   private def calculateTFIDF(userTagsMap: ParSeq[(Int, String)]): ParMap[Int, Map[String, Double]] = {
     //TF
-    val calculateTF = (tags: String) => {
+    def calculateTF(tags: String): Map[String, Double] = {
       val allTags = tags.split(",")
-      allTags.groupBy(identity).mapValues(_.length.toDouble / allTags.length)
+      allTags.groupBy(identity).map { case (key, values) =>
+        key -> values.length.toDouble / allTags.length
+      }
     }
 
     //IDF
-    val calculateIDF = (userTagsMap: ParMap[Int, String]) => {
+    def calculateIDF(userTagsMap: ParMap[Int, String]): Map[String, Double] = {
       val userCount = userTagsMap.size
       userTagsMap.values
-        .par
+        .par // Parallel processing
         .flatMap(_.split(",").distinct)
         .groupBy(identity)
-        .map { case (word, occurrences) => (word, math.log(userCount.toDouble / occurrences.size)) }
+        .map { case (word, occurrences) =>
+          (word, math.log(userCount.toDouble / occurrences.size))
+        }
+        .seq
     }
 
-    val userTagsMap: ParMap[Int, String] = userTagsMap
+    val userTagsGroupMap: ParMap[Int, String] = userTagsMap
       .groupBy(_._1)
       .mapValues(_.map(_._2).mkString(","))
 
-    val idfValuesTag: Map[String, Double] = calculateIDF(userTagsMap).seq
+    val idfValuesTag: Map[String, Double] = calculateIDF(userTagsGroupMap)
 
     //TFIDF
-    userTagsMap      .map { case (user, words) =>
+    userTagsGroupMap.map { case (user, words) =>
         val tfValues = calculateTF(words)
         user -> tfValues.map { case (word, tf) => word -> tf * idfValuesTag.getOrElse(word, 0.0) }
       }
@@ -160,15 +165,19 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
     val targetUserScores = tfidfUserTags(targetUser)
 
-    val topUsers = tfidfUserTags.seq.view
-      .filter { case (key, _) => key != targetUser }
+    //Filter out users with zero TF-IDF vectors
+    val nonZeroTfidf = tfidfUserTags.seq.view
+      .filter { case (_, vector) => math.sqrt(vector.values.map(v => v * v).sum) != 0 }
+
+    val topUsers = nonZeroTfidf
+      .filter { case (key, _) => key != targetUser } // Exclude target user
       .par
       .map { case (key, otherUserScores) =>
         key -> cosineSimilarity(targetUserScores, otherUserScores)
       }
-      .toList           //Convert to list for further processing
-      .sortBy(-_._2)    //Sort by similarity score in descending order
-      .take(3)          //Take the top 3 most similar users
+      .toList
+      .sortBy(-_._2)
+      .take(3)
       .map(_._1)
 
     topUsers

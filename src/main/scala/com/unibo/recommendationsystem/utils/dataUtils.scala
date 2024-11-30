@@ -10,12 +10,12 @@ import scala.util.Random
 
 object dataUtils {
   /**
-   * Handles the creation and management of datasets for a recommendation system.
-   * Offers options to use a full dataset, create a custom dataset, or use an existing custom dataset.
+   * Handles the creation and management of datasets for a recommendation system
+   * Offers options to use a full dataset, create a custom dataset, or use an existing custom dataset
    *
-   * @param spark Spark session.
-   * @param basePath Base path for dataset files.
-   * @return A tuple containing the target user ID and the dataset type ("full", "custom_new", or "custom_exist").
+   * @param spark Spark session
+   * @param basePath Base path for dataset files
+   * @return A tuple containing the target user ID and the dataset type ("full", "custom_new", or "custom_exist")
    */
   def createCustomDatasets(spark: SparkSession, basePath: String): (Int, String) = {
     val firstChoice = promptUser("Do you want to use the full datasets or go to the customization menu? (1/2)")
@@ -66,10 +66,10 @@ object dataUtils {
   }
 
   /**
-   * Filters users based on the minimum number of reviews and allows selecting a specific target user.
+   * Filters users based on the minimum number of reviews and allows selecting a specific target user
    *
-   * @param dfUsers DataFrame containing user information.
-   * @return A tuple containing a list of filtered user IDs and the selected target user ID.
+   * @param dfUsers DataFrame containing user information
+   * @return A tuple containing a list of filtered user IDs and the selected target user ID
    */
   private def filterUsersWithReviews(dfUsers: DataFrame): (List[Int], Int) = {
     val minReviews = promptUser("Enter the minimum number of reviews:").toInt
@@ -96,24 +96,24 @@ object dataUtils {
   }
 
   /**
-   * Extracts unique app (game) IDs from a filtered recommendations dataset.
+   * Extracts unique app (game) IDs from a filtered recommendations dataset
    *
-   * @param dfRecFiltered Filtered DataFrame of recommendations.
-   * @return A list of unique app IDs.
+   * @param dfRecFiltered Filtered DataFrame of recommendations
+   * @return A list of unique app IDs
    */
   private def filterAppIds(dfRecFiltered: DataFrame): List[Int] = {
     dfRecFiltered.select("app_id").distinct().collect().map(_.getInt(0)).toList
   }
 
   /**
-   * Saves a filtered DataFrame as a CSV or JSON file.
+   * Saves a filtered DataFrame as a CSV or JSON file
    *
-   * @param df DataFrame to save.
-   * @param keys List of filter keys.
-   * @param outputDir Output directory for the file.
-   * @param fileName Output file name.
-   * @param filterColumn Column used for filtering the DataFrame.
-   * @param mode Write mode (e.g., "overwrite" or "append").
+   * @param df DataFrame to save
+   * @param keys List of filter keys
+   * @param outputDir Output directory for the file
+   * @param fileName Output file name
+   * @param filterColumn Column used for filtering the DataFrame
+   * @param mode Write mode (e.g., "overwrite" or "append")
    */
   private def saveFilteredDataset(df: DataFrame, keys: List[Int], outputDir: String, fileName: String, filterColumn: String, mode: String): Unit = {
     val dfFiltered = df.filter(col(filterColumn).isin(keys: _*))
@@ -125,12 +125,12 @@ object dataUtils {
   }
 
   /**
-   * Saves a DataFrame as a single file in a specified format (CSV or JSON).
+   * Saves a DataFrame as a single file in a specified format (CSV or JSON)
    *
-   * @param df DataFrame to save.
-   * @param outputDir Output directory.
-   * @param format File format ("csv" or "json").
-   * @param mode Write mode ("overwrite" or "append").
+   * @param df DataFrame to save
+   * @param outputDir Output directory
+   * @param format File format ("csv" or "json")
+   * @param mode Write mode ("overwrite" or "append")
    */
   private def saveAsSingleFile(df: DataFrame, outputDir: String, format: String, mode: String): Unit = {
     df.coalesce(1)
@@ -143,10 +143,10 @@ object dataUtils {
   }
 
   /**
-   * Renames the generated part-* file in the output directory to a specific name.
+   * Renames the generated part-* file in the output directory to a specific name
    *
-   * @param outputDir Directory containing the part-* file.
-   * @param targetFileName Desired name for the file.
+   * @param outputDir Directory containing the part-* file
+   * @param targetFileName Desired name for the file
    */
   private def renamePartFile(outputDir: String, targetFileName: String): Unit = {
     val path = Paths.get(outputDir)
@@ -163,9 +163,9 @@ object dataUtils {
   }
 
   /**
-   * Deletes .crc files in a given directory to clean up after saving.
+   * Deletes .crc files in a given directory to clean up after saving
    *
-   * @param dirPath Path to the directory.
+   * @param dirPath Path to the directory
    */
   private def deleteCRCFiles(dirPath: String): Unit = {
     Files.walk(Paths.get(dirPath))
@@ -176,22 +176,22 @@ object dataUtils {
   }
 
   /**
-   * Reads a CSV dataset with a predefined schema.
+   * Reads a CSV dataset with a predefined schema
    *
-   * @param spark Spark session.
-   * @param path Path to the CSV file.
-   * @param schema Schema to apply during reading.
-   * @return DataFrame created from the CSV file.
+   * @param spark Spark session
+   * @param path Path to the CSV file
+   * @param schema Schema to apply during reading
+   * @return DataFrame created from the CSV file
    */
   private def readDataset(spark: SparkSession, path: String, schema: org.apache.spark.sql.types.StructType): DataFrame = {
     spark.read.format("csv").option("header", "true").schema(schema).load(path)
   }
 
   /**
-   * Prompts the user with a message and reads their input.
+   * Prompts the user with a message and reads their input
    *
-   * @param message Message to display.
-   * @return Trimmed and lowercased user input.
+   * @param message Message to display
+   * @return Trimmed and lowercased user input
    */
   private def promptUser(message: String): String = {
     println(message)

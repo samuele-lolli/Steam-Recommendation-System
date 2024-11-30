@@ -92,18 +92,20 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
    */
   private def calculateTFIDF(userTagsMap: Map[Int, String]): Map[Int, Map[String, Double]] = {
     //Takes user's tags as input and calculates the Term Frequency for each tag
-    val calculateTF = (tags: String) => {
+    def calculateTF(tags: String): Map[String, Double] = {
       val allTags = tags.split(",")
-      allTags.groupBy(identity).mapValues(_.length.toDouble / allTags.length)
+      allTags.groupBy(identity).view.mapValues(_.length.toDouble / allTags.length).toMap
     }
 
     //Computes the Inverse Document Frequency for each tag
-    val calculateIDF = (userTagsMap: Map[Int, String]) => {
+    def calculateIDF(userTagsMap: Map[Int, String]): Map[String, Double] = {
       val userCount = userTagsMap.size
       userTagsMap.values
         .flatMap(_.split(",").distinct)
         .groupBy(identity)
-        .map { case (tag, occurrences) => (tag, math.log(userCount.toDouble / occurrences.size)) }
+        .map { case (tag, occurrences) =>
+          (tag, math.log(userCount.toDouble / occurrences.size))
+        }
     }
 
     val idfValuesTag: Map[String, Double] = calculateIDF(userTagsMap)
@@ -129,7 +131,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
     def cosineSimilarity(targetUserScores: Map[String, Double], otherUserScores: Map[String, Double], tUserDenominator: Double): Double = {
       //Computes the dot product of two vectors
       val numerator = targetUserScores.keySet.intersect(otherUserScores.keySet).foldLeft(0.0) { (acc, k) => acc + targetUserScores(k) * otherUserScores(k) }
-      //Computes the product of magnitudes of the two vectors)
+      //Computes the product of magnitudes of the two vectors
       val denominator = tUserDenominator * math.sqrt(otherUserScores.values.map(v => v * v).sum)
       if (denominator == 0) 0.0 else numerator / denominator
     }

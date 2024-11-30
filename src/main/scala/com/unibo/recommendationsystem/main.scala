@@ -14,7 +14,7 @@ object main {
 
     spark.conf.set("mapreduce.fileoutputcommitter.marksuccessfuljobs", "false")
 
-    val basePath = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\"
+    val basePath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/"
 
     /* Prompt the user to either use the full dataset or create a custom one. */
     val (targetUser, mode) = createCustomDatasets(spark, basePath)
@@ -28,6 +28,10 @@ object main {
         .schema(schemaUtils.recSchema)
         .load(basePath + "recommendations.csv")
         .filter("is_recommended = true")
+       // .orderBy("review_id")
+       // .sample(withReplacement= false, 0.5, seed = 12345)
+        /*.persist(StorageLevel.MEMORY_AND_DISK)
+        */
 
       /* Load the full games dataset. */
       val dfGamesFull = spark.read
@@ -79,22 +83,30 @@ object main {
    * @param targetUser The user ID for which recommendations are generated.
    */
   private def runRecommendersFull(spark: SparkSession, dfRec: DataFrame, dfGames: DataFrame, dfMetadata: DataFrame, targetUser: Int): Unit = {
-    /* Initialize and run the MLlib recommender algorithm. */
+
+   /* /* Initialize and run the MLlib recommender algorithm. */
     val mllibRecommender = new mllibRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
 
+
+    */
     /* Initialize and run the RDD-based recommender algorithm. */
     val rddRecommender = new rddRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
 
+/*
     /* Initialize and run the SQL-hybrid-based recommender algorithm. */
     val sqlRecommenderV2 = new sqlRecommendationV2(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
 
+
     /* Initialize and run the SQL-full-based recommender algorithm. */
     val sqlRecommender = new sqlRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
+    
+ */
   }
+
 
   /**
    * Runs the recommendation algorithms on the filtered dataset.

@@ -9,47 +9,46 @@ object distributedMain {
   def main(args: Array[String]): Unit = {
     val sparkLocal = SparkSession.builder()
       .appName("RecommendationSystem")
-      .config("spark.hadoop.fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
-      .config("spark.hadoop.google.cloud.auth.service.account.enable", "true")
-      .config("spark.executor.memory", "48g") // Allocate 48 GB for each executor
-      .config("spark.driver.memory", "8g")    // Allocate 8 GB for the driver
-      .config("spark.executor.cores", "4")    // Use 4 cores per executor for parallelism
-      .config("spark.default.parallelism", "32") // Set parallelism for transformations
-      .config("spark.sql.shuffle.partitions", "32") // Optimize shuffle partitions
-      .config("spark.dynamicAllocation.enabled", "true")
-      .config("spark.dynamicAllocation.minExecutors", "2")
-      .config("spark.dynamicAllocation.maxExecutors", "6")
+      .config("spark.executor.instances", "7") // One executor per worker.
+      .config("spark.executor.cores", "3") // Use 3 cores per executor.
+      .config("spark.executor.memory", "25g") // ~85% of memory allocated for executors.
+      .config("spark.driver.cores", "2") // Driver cores for master node.
+      .config("spark.driver.memory", "8g") // Sufficient for query execution and small metadata broadcast.
+      .config("spark.shuffle.compress", "true") // Compress shuffle data to optimize I/O.
+      .config("spark.shuffle.spill.compress", "true") // Compress spilled shuffle data.
+      .config("spark.network.timeout", "600s") // Extend timeout for long-running tasks.
+      .config("spark.sql.adaptive.enabled", "true") // Enable adaptive query execution
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") // Use Kryo serializer for efficiency.
+      .config("spark.kryoserializer.buffer.max", "256m") // Smaller buffer since data size is moderate.
+      .config("spark.local.dir", "/tmp/spark-temp") // Use SSD for temporary storage.
+      .config("spark.speculation", "true") // Enable speculative execution to handle stragglers.
+      .getOrCreate()
 
-/*
-  .config("spark.hadoop.fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
-  .config("spark.hadoop.google.cloud.auth.service.account.enable", "true")
-  .config("spark.executor.memory", "48g") // 48 GB for executors
-  .config("spark.executor.memoryOverhead", "6g") // Overhead memory
-  .config("spark.driver.memory", "16g") // Increased driver memory
-  .config("spark.executor.cores", "4") // 4 cores per executor
-  .config("spark.default.parallelism", "48") // 2× total cores
-  .config("spark.sql.shuffle.partitions", "48") // Matches parallelism
-  .config("spark.dynamicAllocation.enabled", "true")
-  .config("spark.dynamicAllocation.minExecutors", "2")
-  .config("spark.dynamicAllocation.maxExecutors", "6")
-  .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-  .config("spark.sql.adaptive.enabled", "true") // Enable adaptive execution
-*/
+    val basePath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/"
+    timeUtils.setLogFilePath(basePath+"result.txt")
 
-  .getOrCreate()
+    val targetUser = 4893896
 
-val basePath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/"
-timeUtils.setLogFilePath(basePath+"result.txt")
-val targetUser = 4893896
+    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").repartition(112).filter("is_recommended = true")//.sample(withReplacement = false, 0.50, 12345)
+    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
+    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
 
-val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true")
-val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
-val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
+    val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+    timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
 
-//
+    /* Initialize and run the RDD-based recommender algorithm. */
+    val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+    timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
 
-val sqlV2Recommender = new sqlRecommendationV2(sparkLocal, dfRec, dfGames, dfMetadata)
-timeUtils.time(sqlV2Recommender.recommend(targetUser), "Total time execution SQLV2", "SQLV2")
+    /* Initialize and run the SQL-hybrid-based recommender algorithm. */
+    val sqlRecommenderV2 = new sqlRecommendationV2(sparkLocal, dfRec, dfGames, dfMetadata)
+    timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
+
+    /* Initialize and run the SQL-full-based recommender algorithm. */
+    val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
+    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
+
+
 }
 }
 

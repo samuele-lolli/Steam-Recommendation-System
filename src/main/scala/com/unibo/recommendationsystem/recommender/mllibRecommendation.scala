@@ -66,27 +66,24 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
     (aggregateData, userGamePairs)
   }
     /*
+     * userGamesData
+     * [4900,12062841,Zen of Sudoku,casual,indie,puzzle,free to play]
+     * [4900,10893520,Zen of Sudoku,casual,indie,puzzle,free to play]
+     * [4900,10243247,Zen of Sudoku,casual,indie,puzzle,free to play]
+     *
      * aggregateData
      * [463,WrappedArray(puzzle, casual, indie, 2d, physics, relaxing, singleplayer, minimalist, short, fast-paced, cute, trading card game, strategy, logic, psychological horror, difficult, action, education, horror, beautiful, psychological horror, multiplayer, free to play, battle royale, pvp, action, first-person, parkour, 3d, fps, platformer, arcade, physics, combat, casual, nudity, runner, racing, 3d platformer, sci-fi)]
      * [1088,WrappedArray(adventure, action, female protagonist, third person, singleplayer, story rich, third-person shooter, multiplayer, exploration, action-adventure, quick-time events, atmospheric, shooter, puzzle, stealth, cinematic, platformer, rpg, reboot, 3d vision)]
      * [1591,WrappedArray(free to play, horror, multiplayer, first-person, co-op, survival horror, shooter, online co-op, action, fps, memes, sci-fi, survival, psychological horror, atmospheric, strategy, difficult, indie, adventure, fantasy)]
      *
-     * userGamesData
-     * [4900,12062841,Zen of Sudoku,casual,indie,puzzle,free to play]
-     * [4900,10893520,Zen of Sudoku,casual,indie,puzzle,free to play]
-     * [4900,10243247,Zen of Sudoku,casual,indie,puzzle,free to play]
+
     */
 
   /**
    * Computes TF-IDF values for all users based on their tags
    *
    * @param aggregateData that contains each user and their tags with associated TF-IDF values
-   * @return DataFrame with:
-   *          - user_id: integer
-   *          - words: array
-   *            - element: string original tag
-   *          - hashedFeatures: vector
-   *          - Features: vector
+   * @return DataFrame containing TF-IDF values for each tag and user
    *
    */
   private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {

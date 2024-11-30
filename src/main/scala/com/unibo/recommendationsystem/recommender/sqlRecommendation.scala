@@ -32,13 +32,13 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
 
   /**
-   * Preprocesses the input data to create intermediate dataframes needed for further calculations.
+   * Preprocesses the input data to create intermediate dataframes needed for further calculations
    *
    * @return A tuple containing:
-   *         - explodedDF: DataFrame with individual users and words (tags).
-   *         - filteredData: DataFrame with aggregated tags for each user.
-   *         - gamesTitles: DataFrame with game IDs and titles.
-   *         - userGamesData: Complete, cleaned, and merged dataset.
+   *         - explodedDF: DataFrame with individual users and words (tags)
+   *         - filteredData: DataFrame with aggregated tags for each user
+   *         - gamesTitles: DataFrame with game IDs and titles
+   *         - userGamesData: Complete, cleaned, and merged dataset
    */
   private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
     val selectedRec = dataRec.select("app_id", "user_id")
@@ -113,9 +113,9 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Computes TF-IDF values for all users based on their tags
    *
-   * @param explodedDF   DataFrame with user-word pairs.
-   * @param filteredData DataFrame with aggregated tags for each user.
-   * @return DataFrame containing TF-IDF values for each word and user.
+   * @param explodedDF   DataFrame with user-word pairs
+   * @param filteredData DataFrame with aggregated tags for each user
+   * @return DataFrame containing TF-IDF values for each tag and user
    */
   private def calculateTFIDF(explodedDF: DataFrame, filteredData: DataFrame): DataFrame = {
     val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
@@ -157,9 +157,9 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Computes cosine similarity between the target user and all other users
    *
-   * @param tfidfDF    DataFrame with TF-IDF values for each word and user.
-   * @param targetUser ID of the target user.
-   * @return List of IDs of the most similar users.
+   * @param tfidfDF    DataFrame with TF-IDF values for each word and user
+   * @param targetUser ID of the target user
+   * @return List of IDs of the most similar users
    */
   private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
     import spark.implicits._
@@ -216,10 +216,10 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
   /**
    * Generates and prints final game recommendations for a target user based on games played by similar users
    *
-   * @param top3Users   List of IDs of the most similar users.
-   * @param targetUser  ID of the target user.
-   * @param gamesTitles DataFrame containing game titles.
-   * @param userGamesData  Complete, cleaned, and merged dataset.
+   * @param top3Users   List of IDs of the most similar users
+   * @param targetUser  ID of the target user
+   * @param gamesTitles DataFrame containing game titles
+   * @param userGamesData  Complete, cleaned, and merged dataset
    */
   private def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, userGamesData: DataFrame): Unit = {
     val gamesByTopUsers = userGamesData.filter(col("user_id").isin(top3Users: _*)).select("app_id", "user_id")
