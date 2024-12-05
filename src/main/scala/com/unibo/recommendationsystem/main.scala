@@ -2,7 +2,7 @@ package com.unibo.recommendationsystem
 
 import com.unibo.recommendationsystem.recommender.{mllibRecommendation, parRecommendation, rddRecommendation, seqRecommendation, sqlRecommendation, sqlRecommendationV2}
 import com.unibo.recommendationsystem.utils.dataUtils.createCustomDatasets
-import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
+import com.unibo.recommendationsystem.utils.{dataUtils, schemaUtils, timeUtils}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object main {
@@ -14,7 +14,7 @@ object main {
 
     spark.conf.set("mapreduce.fileoutputcommitter.marksuccessfuljobs", "false")
 
-    val basePath = "/Users/leonardovincenzi/IdeaProjects/recommendationsystem/steam-dataset/"
+    val basePath = "C:\\Users\\samue\\Desktop\\recommendationsystem\\steam-dataset\\"
 
     /* Prompt the user to either use the full dataset or create a custom one. */
     val (targetUser, mode) = createCustomDatasets(spark, basePath)
@@ -84,27 +84,22 @@ object main {
    */
   private def runRecommendersFull(spark: SparkSession, dfRec: DataFrame, dfGames: DataFrame, dfMetadata: DataFrame, targetUser: Int): Unit = {
 
-   /* /* Initialize and run the MLlib recommender algorithm. */
+    /* Initialize and run the MLlib recommender algorithm. */
     val mllibRecommender = new mllibRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
 
-
-    */
     /* Initialize and run the RDD-based recommender algorithm. */
     val rddRecommender = new rddRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
 
-/*
     /* Initialize and run the SQL-hybrid-based recommender algorithm. */
     val sqlRecommenderV2 = new sqlRecommendationV2(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
 
-
     /* Initialize and run the SQL-full-based recommender algorithm. */
     val sqlRecommender = new sqlRecommendation(spark, dfRec, dfGames, dfMetadata)
     timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
-    
- */
+
   }
 
 
@@ -119,36 +114,33 @@ object main {
    * @param targetUser The user ID for which recommendations are generated.
    */
   private def runRecommendersFiltered(basePath: String, spark: SparkSession, dfRec: DataFrame, dfGames: DataFrame, dfMetadata: DataFrame, targetUser: Int): Unit = {
+    /* Convert dataframe in map for the sequential and parallel recommender */
+    val dfRecToMap = dataUtils.convertDfRecToMap(dfRec)
+    val dfGamesToMap = dataUtils.convertDfGamesToMap(dfGames)
+    val dfMetadataToMap = dataUtils.convertDfMetadataToMap(dfMetadata)
+
     /* Initialize and run the sequential recommender algorithm. */
-    val seqRecommender = new seqRecommendation(
-      basePath + "filteredDataset/recommendations_f.csv",
-      basePath + "filteredDataset/games_f.csv",
-      basePath + "filteredDataset/games_metadata_f.json"
-    )
+    val seqRecommender = new seqRecommendation(dfRecToMap, dfGamesToMap, dfMetadataToMap)
     timeUtils.time(seqRecommender.recommend(targetUser), "Total time execution sequential", "Seq")
 
     /* Initialize and run the parallel recommender algorithm. */
-    val parRecommender = new parRecommendation(
-      basePath + "filteredDataset/recommendations_f.csv",
-      basePath + "filteredDataset/games_f.csv",
-      basePath + "filteredDataset/games_metadata_f.json"
-    )
+    val parRecommender = new parRecommendation(dfRecToMap, dfGamesToMap, dfMetadataToMap)
     timeUtils.time(parRecommender.recommend(targetUser), "Total time execution parallel", "Par")
-
-    /* MLlib-based recommender. */
-    val mllibRecommender = new mllibRecommendation(spark, dfRec, dfGames, dfMetadata)
-    timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
-
-    /* RDD-based recommender. */
-    val rddRecommender = new rddRecommendation(spark, dfRec, dfGames, dfMetadata)
-    timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
-
-    /* SQL-full-based recommender. */
-    val sqlRecommender = new sqlRecommendation(spark, dfRec, dfGames, dfMetadata)
-    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
-
-    /* SQL-hybrid-based recommender. */
-    val sqlRecommenderV2 = new sqlRecommendationV2(spark, dfRec, dfGames, dfMetadata)
-    timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
+//
+//    /* MLlib-based recommender. */
+//    val mllibRecommender = new mllibRecommendation(spark, dfRec, dfGames, dfMetadata)
+//    timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
+//
+//    /* RDD-based recommender. */
+//    val rddRecommender = new rddRecommendation(spark, dfRec, dfGames, dfMetadata)
+//    timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
+//
+//    /* SQL-full-based recommender. */
+//    val sqlRecommender = new sqlRecommendation(spark, dfRec, dfGames, dfMetadata)
+//    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
+//
+//    /* SQL-hybrid-based recommender. */
+//    val sqlRecommenderV2 = new sqlRecommendationV2(spark, dfRec, dfGames, dfMetadata)
+//    timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
   }
 }
