@@ -1,18 +1,10 @@
 package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
-import org.json4s.{DefaultFormats, TypeInfo}
-import org.json4s.jackson.JsonMethods
 
-import scala.collection.concurrent.TrieMap
 import scala.collection.parallel.{ParMap, ParSeq}
-import scala.io.Source
-import scala.util.Using
 
-class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath: String) {
-  private val dataRec: Map[Int, Array[Int]] = loadRecommendations(dataRecPath)
-  private val dataGames: Map[Int, String] = loadDataGames(dataGamesPath)
-  private val metadata: Map[Int, Array[String]] = loadMetadata(metadataPath)
+class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, String], dataMetadataGames: Map[Int, Array[String]]) {
 
   /**
    * (Parallel version) Generates personalized recommendations for a target user
@@ -46,7 +38,7 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
         appIds.flatMap { appId =>
           for {
             title <- dataGames.get(appId)
-            tags <- metadata.get(appId)
+            tags <- dataMetadataGames.get(appId)
           } yield (userId, appId, title, tags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
         }
       }.filter(_._4.nonEmpty).toSeq
@@ -136,9 +128,9 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
 
     //TFIDF
     userTagsGroupMap.map { case (user, words) =>
-        val tfValues = calculateTF(words)
-        user -> tfValues.map { case (word, tf) => word -> tf * idfValuesTag.getOrElse(word, 0.0) }
-      }
+      val tfValues = calculateTF(words)
+      user -> tfValues.map { case (word, tf) => word -> tf * idfValuesTag.getOrElse(word, 0.0) }
+    }
   }
   /*
    * tfIDFValues
@@ -207,76 +199,4 @@ class parRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       println(s"Game ID: $gameId, Title: ${gameInfo._3}, Users: $userIds")
     }
   }
-
-  /**
-   * Loads user recommendations from a CSV file
-   *
-   * @param path The file path to the recommendations file
-   * @return A map of an array of games recommended by each user
-   */
-  def loadRecommendations(path: String): Map[Int, Array[Int]] = {
-    Using.resource(Source.fromFile(path)) { source =>
-      val lines = source.getLines().drop(1).toArray.par
-      //Mutable map to store each user's list of appId
-      val usersRec = TrieMap[String, List[Int]]()
-
-      lines.foreach { line =>
-        val splitLine = line.split(",")
-        val appId = splitLine.head
-        val user = splitLine(6)
-
-        usersRec.synchronized {
-          val updatedList = usersRec.getOrElse(user, List()) :+ appId.toInt
-          usersRec.put(user, updatedList)
-        }
-      }
-      //Convert the mutable map to an immutable
-      usersRec.map { case (user, appIds) =>
-        (user.toInt, appIds.reverse.toArray)
-      }.toMap
-    }
-  }
-
-  /**
-   * Loads games data from a CSV file
-   *
-   * @param path The file path to the games file
-   * @return A map of appId to game titles
-   */
-  private def loadDataGames(path: String): Map[Int, String] = {
-    val lines = Using.resource(Source.fromFile(path)) { source =>
-      source.getLines().drop(1).toSeq.par
-    }
-
-    //Convert to an immutable Map[Int, String]
-    val gamesRec = lines.map { line =>
-      val splitLine = line.split(",").map(_.trim)
-      val appId = splitLine.head.toInt
-      val title = splitLine(1)
-      appId -> title
-    }.toMap
-
-    gamesRec.seq
-  }
-
-  /**
-   * Loads game metadata from a JSON file
-   *
-   * @param path The file path to the JSON file
-   * @return A map of appId to arrays of tags
-   */
-  def loadMetadata(path: String): Map[Int, Array[String]] = {
-    val source = Source.fromFile(path)
-    implicit val formats: DefaultFormats.type = DefaultFormats
-    val appIdsAndTags = source.getLines().foldLeft(Map.empty[Int, Array[String]]) {
-      case (acc, line) =>
-        val json = JsonMethods.parse(line)
-        val appId = (json \ "app_id").extract[Int]
-        val tags = (json \ "tags").extract[Seq[String]].toArray
-        acc + (appId -> tags)
-    }
-    source.close()
-    appIdsAndTags
-  }
-
 }

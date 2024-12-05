@@ -197,4 +197,36 @@ object dataUtils {
     println(message)
     StdIn.readLine().trim.toLowerCase
   }
+
+  def convertDfRecToMap(df: DataFrame): Map[Int, Array[Int]] = {
+    import df.sparkSession.implicits._
+
+    df.select("user_id", "app_id")
+      .as[(Int, Int)]
+      .rdd
+      .groupByKey()
+      .mapValues(_.toArray.sorted)
+      .collect()
+      .toMap
+  }
+
+  def convertDfGamesToMap(df: DataFrame): Map[Int, String] = {
+    import df.sparkSession.implicits._
+
+    df.select("app_id", "title")
+      .as[(Int, String)]
+      .rdd
+      .collect()
+      .toMap
+  }
+
+  def convertDfMetadataToMap(df: DataFrame): Map[Int, Array[String]] = {
+    import df.sparkSession.implicits._
+
+    df.select("app_id", "tags")
+      .as[(Int, Array[String])]
+      .rdd
+      .collect()
+      .toMap
+  }
 }
