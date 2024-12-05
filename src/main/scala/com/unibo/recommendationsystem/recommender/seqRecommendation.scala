@@ -1,17 +1,10 @@
 package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
-import org.json4s.DefaultFormats
-import org.json4s.jackson.JsonMethods
+
 import scala.collection.compat.{toMapViewExtensionMethods, toTraversableLikeExtensionMethods}
-import scala.io.Source
-import scala.util.Using
 
-class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath: String) {
-
-  private val dataRec: Map[Int, Array[Int]] =  loadRecommendations(dataRecPath)
-  private val dataGames: Map[Int, String] = loadDataGames(dataGamesPath)
-  private val metadata: Map[Int, Array[String]] = loadMetadata(metadataPath)
+class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, String], dataMetaGames: Map[Int, Array[String]]) {
 
   /**
    * (Sequential version) Generates personalized recommendations for a target user
@@ -43,7 +36,7 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
         for {
           appId <- appIds
           appTitle <- dataGames.get(appId)
-          appTags <- metadata.get(appId)
+          appTags <- dataMetaGames.get(appId)
         } yield (userId, appId, appTitle, appTags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
     }.filter(_._4.nonEmpty)
     /*
@@ -175,73 +168,5 @@ class seqRecommendation(dataRecPath: String, dataGamesPath: String, metadataPath
       val gameInfo = userGames.head // Any element contains game details
       println(s"Game ID: $gameId, Title: ${gameInfo._3}, Users: $userIds")
     }
-  }
-
-  /**
-   * Loads user recommendations from a CSV file
-   *
-   * @param path The file path to the recommendations file
-   * @return A map that returns an array of games recommended by each user
-   */
-  def loadRecommendations(path: String): Map[Int, Array[Int]] = {
-    //Mutable map to store each user's list of appId
-    val usersRec = collection.mutable.Map[String, List[Int]]()
-    //Read the file and process each line
-    Using.resource(Source.fromFile(path)) { source =>
-      for (line <- source.getLines().drop(1)) {
-        val splitLine = line.split(",")
-        val appId = splitLine.head
-        val user = splitLine(6)
-        // Update the list of app IDs for each user
-        usersRec.update(user, appId.toInt :: usersRec.getOrElse(user, Nil))
-      }
-    }
-    //Convert the mutable map to an immutable Map[Int, Array[Int]]
-    usersRec.map { case (user, appIds) =>
-      (user.toInt, appIds.reverse.toArray)
-    }.toMap
-  }
-
-  /**
-   * Loads games data from a CSV file
-   * @param path The file path to the games file
-   * @return A map of appId to game titles
-   */
-  private def loadDataGames(path: String): Map[Int, String] = {
-    val gamesRec = collection.mutable.Map[Int, String]()
-    //Read the file and process each line
-    Using.resource(Source.fromFile(path)) { source =>
-      for (line <- source.getLines().drop(1)) {
-        val splitLine = line.split(",").map(_.trim)
-        val appId = splitLine.head.toInt
-        val title = splitLine(1)
-        gamesRec.update(appId, title)
-      }
-    }
-    //Convert to an immutable Map[Int, String]
-    gamesRec.toMap
-  }
-
-  /**
-   * Loads game metadata from a JSON file
-   *
-   * @param path The file path to the JSON file
-   * @return A map of appId to arrays of tags
-   */
-  def loadMetadata(path: String): Map[Int, Array[String]] = {
-    //Read the entire JSON file
-    val source = Source.fromFile(path)
-    implicit val formats: DefaultFormats.type = DefaultFormats
-    //Process each line of the JSON file
-    val appIdsAndTags = source.getLines().foldLeft(Map.empty[Int, Array[String]]) {
-      case (acc, line) =>
-        val json = JsonMethods.parse(line)
-        val appId = (json \ "app_id").extract[Int]
-        val tags = (json \ "tags").extract[Seq[String]].toArray
-        acc + (appId -> tags)
-    }
-    //Close the file after processing
-    source.close()
-    appIdsAndTags
   }
 }
