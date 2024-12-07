@@ -121,7 +121,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
       .agg(countDistinct("user_id").alias("document_frequency"))
 
     //Users
-    val totalDocs = explodedDF.distinct().count()
+    val totalDocs = explodedDF.select("user_id").distinct().count()
 
     //IDF
     dfDF.createOrReplaceTempView("dfDF")
