@@ -47,9 +47,10 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     */
 
     //Extract tags for each appId
-    val appIdTagsRDD = metadata.rdd.map(row =>
-      (row.getInt(0), row.getList(2).toArray.map(_.toString).mkString(",").toLowerCase.replaceAll("\\s+", " "))
-    )
+    val appIdTags = metadata.rdd
+      .map(row => (row.getInt(0), row.getList(2).toArray.map(_.toString).mkString(",").toLowerCase.replaceAll("\\s+", " ")))
+      .collect()
+      .toMap
     /*
     (928370,casual,sports,vr,physics,arcade,survival,cartoony,zombies,singleplayer,score attack,3d,first-person,stylized,fantasy,medieval,6dof,artificial intelligence,fps,survival horror,action)
     (1373110,immersive,casual,relaxing,vr,experimental,atmospheric,cinematic,abstract,psychedelic,exploration,free to play,simulation,colorful,immersive sim,minimalist,realistic,underwater,singleplayer)
@@ -58,11 +59,14 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     (221020,city builder,indie,sandbox,simulation,strategy,crafting,singleplayer,rpg,survival,building,resource management,isometric,pixel graphics,zombies,fantasy,management,adventure,roguelike,casual)
      */
 
-    // Perform a join operation between appIdTagsRDD and appIdUserId RDD
-    val appIdUserDetails = appIdUserId
-      .join(appIdTagsRDD) // Join on appId (the key in both RDDs)
-      .map { case (appId, (userId, tags)) => (appId, tags, userId) } // Reshape the result
-      .persist(StorageLevel.MEMORY_AND_DISK) ////.cache()
+    val broadcastTagMap = spark.sparkContext.broadcast(appIdTags)
+
+    //Add tags to games
+    val appIdUserDetails = appIdUserId.map { case (appId, userId) =>
+        val tags = broadcastTagMap.value.getOrElse(appId, "")
+        (appId, tags, userId)
+      }.filter(_._2.nonEmpty)
+      .persist(StorageLevel.MEMORY_AND_DISK)//.cache() ////.cache()
     /*
     (1544020,horror,sci-fi,survival horror,third-person shooter,space,shooter,action-adventure,third person,pve,3d,action,story rich,linear,realistic,adventure,robots,cinematic,dark,futuristic,shoot 'em up,11608913)
     (1325200,rpg,action,souls-like,character customization,difficult,co-op,jrpg,multiplayer,fantasy,dark fantasy,historical,story rich,violent,singleplayer,hack and slash,dark,medieval,atmospheric,gore,female protagonist,11593837)
@@ -193,6 +197,9 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .map(_._1)
       .collect()
       .toSet
+
+    targetUserAppIds.foreach(println)
+    println("Giochi utente target")
     /*
     1200
     312450
@@ -226,7 +233,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val recommendationsWithTitle = finalRecommendations
       .join(gamesData)
       .map { case (appId, (userId, title)) => (appId, title, userId) }
-      .distinct()
 
     recommendationsWithTitle.collect().foreach { case (appId, title, userId) =>
       println(s"Game ID: $appId, userId: $userId, title: $title")
