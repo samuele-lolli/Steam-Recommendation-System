@@ -129,7 +129,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .agg(countDistinct("user_id").alias("document_frequency"))
 
     //Users
-    val totalDocs = explodedDF.distinct().count()
+    val totalDocs = explodedDF.select("user_id").distinct().count()
 
     //IDF
     val idfDF = dfDF.withColumn("idf", log(lit(totalDocs) / col("document_frequency")))
@@ -241,6 +241,7 @@ class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     .collect()
     .toList
 }
+
    */
 
   /*

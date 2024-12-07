@@ -108,7 +108,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
         .toMap
     }
 
-    //val idfValuesTag: Map[String, Double] = calculateIDF(userTagsGroup)
+    val idfValuesTag: Map[String, Double] = calculateIDF(userTagsGroup)
     /*
     (turn-based combat,2.06678519517185)
     (snow,4.500203205121008)
@@ -120,7 +120,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     //TF-IDF
     val tfidfUserTags =  userTagsGroup.map { case (user, tags) =>
       val tfValues = calculateTF(tags)
-      (user, tfValues.map { case (tag, tf) => (tag, tf * calculateIDF(userTagsGroup).getOrElse(tag, 0.0)) })
+      (user, tfValues.map { case (tag, tf) => (tag, tf * idfValuesTag.getOrElse(tag, 0.0)) })
     }
     /*
     (6281566,Map(beautiful -> 0.013373348669853081, indie -> 0.0012615738716926044, superhero -> 0.018177108680027816, 2d -> 0.003646568915610358, replay value -> 0.009133181570513639, multiplayer -> 0.005210407883849194, metroidvania -> 0.013396885363901037, pvp -> 0.007576678490092771, assassin -> 0.0330417780031789, female protagonist -> 0.005446209469144816, cute -> 0.007448946878495773, action-adventure -> 0.008451774080469472, survival -> 0.008968385032315026, story rich -> 0.014832463415339302, competitive -> 0.021594502132284005, war -> 0.009668627815645125, character customization -> 0.008670864369718947, nudity -> 0.015811369590297646, stealth -> 0.030375450389445162, classic -> 0.01311370905008124, post-apocalyptic -> 0.0176879532711901, 2.5d -> 0.014657809343347736, fps -> 0.01658047037807564, survival horror -> 0.01764702102104639, dark -> 0.007541202820524046, singleplayer -> 0.0014851259093566112, puzzle -> 0.004703601467462281, modern -> 0.023096176466037746, beat 'em up -> 0.012750664032914808, heist -> 0.020069030607444395, horror -> 0.008776225110138636, steampunk -> 0.031395026441253436, shooter -> 0.011591302521908873, co-op -> 0.0029096418405069628, open world -> 0.013059586673429326, zombies -> 0.00880659192693677, difficult -> 0.011540876259976303, rpg -> 0.0028220096044712824, linear -> 0.014751976417869631, immersive sim -> 0.029153199233627903, platformer -> 0.006955310396088743, supernatural -> 0.0175381716255666, first-person -> 0.014587046908635133, atmospheric -> 0.008201243921347216, mature -> 0.008719328098575903, great soundtrack -> 0.007588237488687272, parkour -> 0.011309605228825511, based on a novel -> 0.03625905142000129, remake -> 0.026512601945725866, controller -> 0.014221852474228028, moddable -> 0.008219213192259203, multiple endings -> 0.009962230053475829, magic -> 0.02478633320442582, 2d fighter -> 0.0188563271913071, fighting -> 0.012255656663586906, dystopian -> 0.02411208106208043, violent -> 0.005655683554772282, local multiplayer -> 0.009691876553857537, arcade -> 0.008298574835029536, souls-like -> 0.015832042527138074, adventure -> 0.003348706326009017, comic book -> 0.015794567699889264, emotional -> 0.012671657744645182, military -> 0.010994111013511975, action -> 0.00332193316879919, sci-fi -> 0.004305474972966264, exploration -> 0.009943113073302146, gore -> 0.008813577807559973, online co-op -> 0.005406102970266266, fantasy -> 0.010337512813160595))
