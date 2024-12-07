@@ -16,16 +16,15 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (explodedDF, filteredData, gamesTitles, userGamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_HYBRID")
+    val (explodedDF, gamesTitles, userGamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_HYBRID")
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF, filteredData), "Calculating TF-IDF", "SQL_HYBRID")
+    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF), "Calculating TF-IDF", "SQL_HYBRID")
     println("Calculate cosine similarity to get similar users...")
     val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL_HYBRID")
     println("Calculate final recommendation...")
     timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, userGamesData), "Generating Recommendations", "SQL_HYBRID")
 
     explodedDF.unpersist()
-    filteredData.unpersist()
     tfidfValues.unpersist()
     gamesTitles.unpersist()
     userGamesData.unpersist()
@@ -40,7 +39,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
    *         - gamesTitles: DataFrame with game IDs and titles
    *         - userGamesData: Complete, cleaned, and merged dataset
    */
-  private def preprocessData(): (DataFrame, DataFrame, DataFrame, DataFrame) = {
+  private def preprocessData(): (DataFrame, DataFrame, DataFrame) = {
 
     val selectedRec = dataRec.select("app_id", "user_id")
     val selectedGames = dataGames.select("app_id", "title")
@@ -63,7 +62,6 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
       .withColumn("words", split(col("tagsString"), ",")) // Split tags by commas
       .groupBy("user_id")
       .agg(flatten(collect_list("words")).as("words"))
-      .persist(StorageLevel.MEMORY_AND_DISK)
 
     //Explode tags to calculate TF-IDF
     val explodedDF = filteredData.withColumn("word", explode(col("words"))).select("user_id", "word")
@@ -71,7 +69,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
 
     val gamesTitles = dataGames.select("app_id", "title")
 
-    (explodedDF, filteredData, gamesTitles, userGamesData)
+    (explodedDF, gamesTitles, userGamesData)
   }
 
   /*
@@ -109,7 +107,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
    * @param filteredData DataFrame with user-wise aggregated tags as arrays
    * @return DataFrame containing TF-IDF scores for each user and word
    */
-  private def calculateTFIDF(explodedDF: DataFrame, filteredData: DataFrame): DataFrame = {
+  private def calculateTFIDF(explodedDF: DataFrame): DataFrame = {
     val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
 
     //TF
@@ -123,7 +121,7 @@ class sqlRecommendationV2 (spark: SparkSession, dataRec: Dataset[Row], dataGames
       .agg(countDistinct("user_id").alias("document_frequency"))
 
     //Users
-    val totalDocs = filteredData.count()
+    val totalDocs = explodedDF.distinct().count()
 
     //IDF
     dfDF.createOrReplaceTempView("dfDF")
