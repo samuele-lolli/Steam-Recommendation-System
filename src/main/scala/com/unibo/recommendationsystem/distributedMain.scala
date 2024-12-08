@@ -1,6 +1,6 @@
 package com.unibo.recommendationsystem
 
-import com.unibo.recommendationsystem.recommender.{mllibRecommendation, rddRecommendation, sqlRecommendation, sqlRecommendationV2}
+import com.unibo.recommendationsystem.recommender.{mllibRecommendation, rddRecommendation, sqlRecommendation}
 import com.unibo.recommendationsystem.utils.{schemaUtils, timeUtils}
 import org.apache.spark.sql.SparkSession
 
@@ -33,6 +33,7 @@ object distributedMain {
     val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "data/games.csv")
     val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "data/games_metadata.json")
 
+    /* Initialize and run the MLLIB recommender algorithm. */
     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
 
@@ -40,13 +41,9 @@ object distributedMain {
     val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     timeUtils.time(rddRecommender.recommend(targetUser), "Total time execution RDD", "RDD")
 
-    /* Initialize and run the SQL-hybrid-based recommender algorithm. */
-    val sqlRecommenderV2 = new sqlRecommendationV2(sparkLocal, dfRec, dfGames, dfMetadata)
-    timeUtils.time(sqlRecommenderV2.recommend(targetUser), "Total time execution SQL_HYBRID", "SQL_HYBRID")
-
     /* Initialize and run the SQL-full-based recommender algorithm. */
     val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
-}
+  }
 }
 
