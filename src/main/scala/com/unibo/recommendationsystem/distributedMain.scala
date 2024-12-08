@@ -24,14 +24,14 @@ object distributedMain {
       .config("spark.speculation", "true") // Enable speculative execution to handle stragglers.
       .getOrCreate()
 
-    val basePath = "gs://dataproc-staging-us-central1-534461255477-conaqzw0/"
+    val basePath = "gs://dataproc-staging-us-central1-744829709426-p8bgsxuj/"
     timeUtils.setLogFilePath(basePath+"result.txt")
 
     val targetUser = 4893896
 
-    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").repartition(112).filter("is_recommended = true")//.sample(withReplacement = false, 0.50, 12345)
-    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
-    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
+    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "data/recommendations.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.50, 12345)
+    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "data/games.csv")
+    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "data/games_metadata.json")
 
     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
@@ -47,8 +47,6 @@ object distributedMain {
     /* Initialize and run the SQL-full-based recommender algorithm. */
     val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
-
-
 }
 }
 
