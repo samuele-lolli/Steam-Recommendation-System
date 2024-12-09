@@ -4,7 +4,7 @@ import com.unibo.recommendationsystem.utils.timeUtils
 import org.apache.spark.ml.feature.{HashingTF, IDF}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, Encoders, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
 class mllibRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataFrame, dfMetadata: DataFrame) {
@@ -81,30 +81,44 @@ class mllibRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: Dat
   private def computeCosineSimilarity(tfidf: DataFrame, targetUser: Int): List[Int] = {
     import spark.implicits._
 
+    // Fetch the target user's feature vector
     val targetUserFeatures = tfidf
       .filter($"user_id" === targetUser)
       .select("features")
       .first()
       .getAs[Vector]("features")
 
-    val cosineSimilarity = udf { (otherVector: Vector) =>
-      val dotProduct = targetUserFeatures.dot(otherVector)
-      val normA = Vectors.norm(targetUserFeatures, 2)
-      val normB = Vectors.norm(otherVector, 2)
-      dotProduct / (normA * normB)
-    }
+    // Precompute the norm of the target user's feature vector
+    val targetUserNorm = Vectors.norm(targetUserFeatures, 2)
 
+    val targetUserFeaturesBroadcast = spark.sparkContext.broadcast(targetUserFeatures)
+
+    //Compute cosine similarity
     val topSimilarUsers = tfidf
       .filter($"user_id" =!= targetUser)
-      .withColumn("cosine_sim", cosineSimilarity(col("features")))
+      .map { row =>
+        val userId = row.getAs[Int]("user_id")
+        val features = row.getAs[Vector]("features")
+        val dotProduct = targetUserFeaturesBroadcast.value.dot(features)
+        val normB = Vectors.norm(features, 2)
+        val cosineSim = if (normB != 0) dotProduct / (targetUserNorm * normB) else 0.0
+        (userId, cosineSim)
+      }
+
+      // Convert to DataFrame, sort, and pick top users
+      .toDF("user_id", "cosine_sim")
       .orderBy($"cosine_sim".desc)
       .limit(3)
       .select("user_id")
       .as[Int]
       .collect()
 
+    // Release the broadcast variable
+    targetUserFeaturesBroadcast.unpersist()
+
     topSimilarUsers.toList
   }
+
 
   /**
    * Generates the final recommendations for the target user
