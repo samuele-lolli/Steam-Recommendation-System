@@ -7,112 +7,81 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
-class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
+class mllibRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataFrame, dfMetadata: DataFrame) {
 
   /**
-   * (MLlib SQL version) Generates personalized recommendations for a target user
+   * Generates game recommendations for a target user.
    *
-   * @param targetUser Int, The ID of the user for which we are generating recommendations
-   *
+   * @param targetUser The ID of the user for whom recommendations are to be generated.
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (aggregateData, userGamePairs) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
+    val (preprocessedData, gameTitles, userGameDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
+
     println("Calculate term frequency and inverse document frequency...")
-    val tfidfValues = timeUtils.time(calculateTFIDF(aggregateData), "Calculating TF-IDF", "MlLib")
+    val tfidf = timeUtils.time(calculateTFIDF(preprocessedData), "Calculating TF-IDF", "MlLib")
+
     println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "MlLib")
+    val similarUsers = timeUtils.time(computeCosineSimilarity(tfidf, targetUser), "Getting Similar Users", "MlLib")
+
     println("Calculate final recommendation...")
-    timeUtils.time(generateFinalRecommendations(userGamePairs, topUsersSimilarity, targetUser), "Generating Recommendations", "MlLib")
-
-    aggregateData.unpersist()
-    userGamePairs.unpersist()
-    tfidfValues.unpersist()
-    topUsersSimilarity.unpersist()
+    timeUtils.time(generateFinalRecommendations(similarUsers, targetUser, gameTitles, userGameDetails), "Generating Recommendations", "MlLib")
   }
 
   /**
-   * Preprocesses the input data to create intermediate dataframes needed for further calculations.
+   * Preprocesses the input data by normalizing tags and preparing data for TF-IDF.
    *
-   * @return A tuple of:
-   *         - [Int, WrappedArray(String)] that maps each user with their tags for TF-IDF calculation
-   *         - [Int, Int, String, String, ...] that contains game/user associations, game title and its relative tags
-   *
+   * @return A tuple containing:
+   *         - A DataFrame with user and their associated tag words.
+   *         - A DataFrame mapping game IDs to their titles.
+   *         - A DataFrame with detailed information about games and users.
    */
-  private def preprocessData(): (DataFrame, DataFrame) = {
-    val selectedRec = dataRec.select("app_id", "user_id")
-    val selectedGames = dataGames.select("app_id", "title")
-
-    val userGamesData = selectedRec
-      .join(selectedGames, Seq("app_id"))
-      .join(metadata.drop("description"), Seq("app_id"))
+  private def preprocessData(): (DataFrame, DataFrame, DataFrame) = {
+    val userGameDetails = dfRec
+      .join(dfGames.select("app_id", "title"), Seq("app_id"))
+      .join(dfMetadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
-
-    val userGamePairs = userGamesData
-      .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
-      .withColumn("tagsString", concat_ws(",", col("tags")))
+      .withColumn("normalized_tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
+      .withColumn("tags_string", concat_ws(",", col("normalized_tags")))
       .drop("tags")
-      .persist(StorageLevel.MEMORY_AND_DISK)
-    //.cache()
 
-    val ugpTokenized = userGamePairs.withColumn("words", split(col("tagsString"), ","))
-
-    val aggregateData = ugpTokenized
+    val userTagData = userGameDetails
+      .withColumn("tag_words", split(col("tags_string"), ","))
       .groupBy("user_id")
-      .agg(flatten(collect_list("words")).as("words"))
+      .agg(flatten(collect_list("tag_words")).as("tag_words"))
       .persist(StorageLevel.MEMORY_AND_DISK)
-    //.cache()
 
-    (aggregateData, userGamePairs)
+    val gameTitles = dfGames.select("app_id", "title")
+
+    (userTagData, gameTitles, userGameDetails)
   }
-    /*
-     * userGamesData
-     * [4900,12062841,Zen of Sudoku,casual,indie,puzzle,free to play]
-     * [4900,10893520,Zen of Sudoku,casual,indie,puzzle,free to play]
-     * [4900,10243247,Zen of Sudoku,casual,indie,puzzle,free to play]
-     *
-     * aggregateData
-     * [463,WrappedArray(puzzle, casual, indie, 2d, physics, relaxing, singleplayer, minimalist, short, fast-paced, cute, trading card game, strategy, logic, psychological horror, difficult, action, education, horror, beautiful, psychological horror, multiplayer, free to play, battle royale, pvp, action, first-person, parkour, 3d, fps, platformer, arcade, physics, combat, casual, nudity, runner, racing, 3d platformer, sci-fi)]
-     * [1088,WrappedArray(adventure, action, female protagonist, third person, singleplayer, story rich, third-person shooter, multiplayer, exploration, action-adventure, quick-time events, atmospheric, shooter, puzzle, stealth, cinematic, platformer, rpg, reboot, 3d vision)]
-     * [1591,WrappedArray(free to play, horror, multiplayer, first-person, co-op, survival horror, shooter, online co-op, action, fps, memes, sci-fi, survival, psychological horror, atmospheric, strategy, difficult, indie, adventure, fantasy)]
-     *
-
-    */
 
   /**
-   * Computes TF-IDF values for all users based on their tags
+   * Calculates the Term Frequency-Inverse Document Frequency (TF-IDF) for tags associated with users.
    *
-   * @param aggregateData that contains each user and their tags with associated TF-IDF values
-   * @return DataFrame containing TF-IDF values for each tag and user
-   *
+   * @param userTagData A DataFrame containing users and their associated tags.
+   * @return A DataFrame containing TF-IDF features for each user.
    */
-  private def calculateTFIDF(aggregateData: DataFrame): DataFrame = {
-    val hashingTF = new HashingTF().setInputCol("words").setOutputCol("hashedFeatures").setNumFeatures(20000)
-    val featurizedData = hashingTF.transform(aggregateData).persist(StorageLevel.MEMORY_AND_DISK)//.cache()
+  private def calculateTFIDF(userTagData: DataFrame): DataFrame = {
+    val hashingTF = new HashingTF().setInputCol("tag_words").setOutputCol("hashedFeatures").setNumFeatures(20000)
+    val tf = hashingTF.transform(userTagData)
 
     val idf = new IDF().setInputCol("hashedFeatures").setOutputCol("features")
-    val idfModel = idf.fit(featurizedData)
-    idfModel.transform(featurizedData)
+    val idfModel = idf.fit(tf)
+    idfModel.transform(tf)
   }
-  /*
-   * [463,WrappedArray(puzzle, casual, indie, 2d, physics, relaxing, singleplayer, minimalist, short, fast-paced, cute, trading card game, strategy, logic, psychological horror, difficult, action, education, horror, beautiful, psychological horror, multiplayer, free to play, battle royale, pvp, action, first-person, parkour, 3d, fps, platformer, arcade, physics, combat, casual, nudity, runner, racing, 3d platformer, sci-fi),(20000,[349,776,2291,2768,4599,5049,5530,5566,5966,6230,7421,7548,7845,8023,8218,8250,9170,9341,9770,10405,11262,11273,11440,11712,11956,12111,13751,14055,14142,14276,14443,14942,16633,17031,17798,18809],[1.0,2.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,2.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,1.0,1.0,1.0]),(20000,[349,776,2291,2768,4599,5049,5530,5566,5966,6230,7421,7548,7845,8023,8218,8250,9170,9341,9770,10405,11262,11273,11440,11712,11956,12111,13751,14055,14142,14276,14443,14942,16633,17031,17798,18809],[1.7302931578817133,3.2127443925768318,0.8394589959004939,3.010483459454005,1.055022232707697,2.4180155088599298,3.3222262929471063,1.2988803766664814,1.3305530075463046,2.162867319853891,1.8442557278718714,1.3786699662036868,1.2280896704098183,4.419749903150982,3.7323474712556974,1.8422450147669338,0.8307478616653239,3.665163626523716,0.15870374729806824,2.4407820725061584,2.379376998652651,2.7517190390805983,0.5036136011040446,1.1331072326269802,2.949945816108345,2.160505153283781,1.0733073796519677,1.713318878009665,2.3190328451378446,3.753340030663497,2.797025744413799,1.3422542741250956,0.4956754550369963,1.950770095402198,0.3752726789656653,1.8245946488850548])]
-   * [1088,WrappedArray(adventure, action, female protagonist, third person, singleplayer, story rich, third-person shooter, multiplayer, exploration, action-adventure, quick-time events, atmospheric, shooter, puzzle, stealth, cinematic, platformer, rpg, reboot, 3d vision),(20000,[731,2833,4051,4285,5234,5423,6216,6420,6696,7548,9770,9842,10957,11688,12640,14055,15464,16633,17715,17798],[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]),(20000,[731,2833,4051,4285,5234,5423,6216,6420,6696,7548,9770,9842,10957,11688,12640,14055,15464,16633,17715,17798],[0.7941703789864701,0.35194405919755334,2.608304476842931,2.9429750381337834,0.8652566076803664,1.0657132906941778,3.06783780516898,1.7675743801929877,1.5040395028807223,1.3786699662036868,0.15870374729806824,3.8974589905293526,1.3313823365419577,0.6034520545039481,1.8734875151812935,1.713318878009665,1.8486268618914479,0.24783772751849814,0.8771216603091817,0.3752726789656653])]
-   * [1591,WrappedArray(free to play, horror, multiplayer, first-person, co-op, survival horror, shooter, online co-op, action, fps, memes, sci-fi, survival, psychological horror, atmospheric, strategy, difficult, indie, adventure, fantasy),(20000,[776,2291,2833,2840,3859,5566,5966,7845,9170,11440,11688,11712,12813,13751,14431,14773,14914,16633,17715,17798],[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]),(20000,[776,2291,2833,2840,3859,5566,5966,7845,9170,11440,11688,11712,12813,13751,14431,14773,14914,16633,17715,17798],[1.6063721962884159,0.8394589959004939,0.35194405919755334,1.9484240635796308,1.3023162055104078,1.2988803766664814,1.3305530075463046,1.2280896704098183,0.8307478616653239,0.5036136011040446,0.6034520545039481,1.1331072326269802,1.109334509076732,1.0733073796519677,1.1841472207416648,1.9276226095939772,0.7705348574053624,0.24783772751849814,0.8771216603091817,0.3752726789656653])]
-   */
-
 
   /**
-   * Computes cosine similarity between the target user and all other users
+   * Computes the cosine similarity between a target user and other users based on TF-IDF vectors.
    *
-   * @param rescaledData Map[Int, Map[String, Double] ], tf-idf score map for each userId
-   * @param targetUser Int, the ID of the target user
-   * @return A list of the top 3 most similar user IDs
-   *
+   * @param tfidf A DataFrame containing TF-IDF features for all users.
+   * @param targetUser   The ID of the target user.
+   * @return A list of user IDs similar to the target user, ordered by similarity.
    */
-  private def computeCosineSimilarity(rescaledData: DataFrame, targetUser: Int): DataFrame = {
+  private def computeCosineSimilarity(tfidf: DataFrame, targetUser: Int): List[Int] = {
     import spark.implicits._
 
-    val targetUserFeatures = rescaledData
+    val targetUserFeatures = tfidf
       .filter($"user_id" === targetUser)
       .select("features")
       .first()
@@ -125,51 +94,41 @@ class mllibRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames:
       dotProduct / (normA * normB)
     }
 
-    rescaledData
+    val topSimilarUsers = tfidf
       .filter($"user_id" =!= targetUser)
       .withColumn("cosine_sim", cosineSimilarity(col("features")))
-      .select("user_id", "cosine_sim")
       .orderBy($"cosine_sim".desc)
       .limit(3)
- }
-
-  /*
-   *
-   * [8971360,0.8591792924376707]
-   * [13271546,0.8443858670280873]
-   * [11277999,0.8432720374293458]
-   *
-   */
-
-  /**
-   * Generates and prints final game recommendations for a target user based on games played by similar users
-   *
-   * @param userGamePairs [Int, Int, String, String, ...] that contains game/user associations, game title and tags
-   * @param usersSimilarity List[Int], list of IDs of the most similar users. 3 items
-   * @param targetUser Int, the ID of the target user
-   *
-   */
-  private def generateFinalRecommendations(userGamePairs: DataFrame, usersSimilarity: DataFrame, targetUser: Int): Unit = {
-    import spark.implicits._
-
-    val titlesPlayedByTargetUser = userGamePairs
-      .filter($"user_id" === targetUser)
-      .select("title")
-      .distinct()
-      .as[String]
-      .collect()
-
-    val userIdsToFind = usersSimilarity
       .select("user_id")
       .as[Int]
       .collect()
-      .toSet
 
-    val finalRecommendations = userGamePairs
-      .filter(col("user_id").isin(userIdsToFind.toSeq: _*) && !col("title").isin(titlesPlayedByTargetUser: _*))
+    topSimilarUsers.toList
+  }
+
+  /**
+   * Generates the final recommendations for the target user
+   *
+   * @param similarUserIds  A List[Int] containing the top 3 similar users ids
+   * @param targetUser The ID of the target user.
+   * @param gameTitles A DataFrame mapping game IDs to their titles.
+   * @param userGameDetails - A DataFrame with detailed information about games and users.
+   */
+  private def generateFinalRecommendations(similarUserIds: List[Int], targetUser: Int, gameTitles: DataFrame, userGameDetails: DataFrame): Unit = {
+    val gamesPlayedBySimilarUsers = userGameDetails
+      .filter(col("user_id").isin(similarUserIds: _*))
+      .select("app_id", "user_id")
+
+    val gamesPlayedByTargetUser = userGameDetails
+      .filter(col("user_id") === targetUser)
+      .select("app_id")
+
+    val recommendations = gamesPlayedBySimilarUsers
+      .join(gamesPlayedByTargetUser, Seq("app_id"), "left_anti")
+      .join(gameTitles, Seq("app_id"))
       .groupBy("app_id", "title")
-      .agg(collect_list("user_id").alias("users"))
+      .agg(collect_list("user_id").alias("similar_user_ids"))
 
-    finalRecommendations.show(finalRecommendations.count().toInt ,truncate = false)
+    recommendations.show(recommendations.count().toInt, truncate = false)
   }
 }

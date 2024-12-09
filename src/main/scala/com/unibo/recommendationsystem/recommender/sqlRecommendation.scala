@@ -5,183 +5,162 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
-class sqlRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: DataFrame, metadata: DataFrame) {
+class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataFrame, dfMetadata: DataFrame) {
 
   /**
-   * Main method for generating recommendations for a target user.
+   * Generates game recommendations for a target user.
    *
-   * @param targetUser The user_id of the target user for whom we want to generate recommendations.
+   * @param targetUser The ID of the user for whom recommendations are to be generated.
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    // Preprocess the data and return exploded DataFrame, game titles, and user-games data
-    val (explodedDF, gamesTitles, userGamesData) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_FULL")
+    val (preprocessedData, gameTitles, userGameDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_FULL")
 
-    println("Calculating term frequency and inverse document frequency...")
-    // Calculate the TF-IDF values based on the exploded data
-    val tfidfValues = timeUtils.time(calculateTFIDF(explodedDF), "Calculating TF-IDF", "SQL_FULL")
+    println("Calculate term frequency and inverse document frequency...")
+    val tfidf = timeUtils.time(calculateTFIDF(preprocessedData), "Calculating TF-IDF", "SQL_FULL")
 
-    println("Calculating cosine similarity to get similar users...")
-    // Compute the cosine similarity to identify similar users to the target user
-    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfValues, targetUser), "Getting Similar Users", "SQL_FULL")
+    println("Calculate cosine similarity to get similar users...")
+    val similarUsers = timeUtils.time(computeCosineSimilarity(tfidf, targetUser), "Finding Similar Users", "SQL_FULL")
 
-    println("Calculating final recommendation...")
-    // Generate the final recommendations based on the most similar users
-    timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, gamesTitles, userGamesData), "Generating Recommendations", "SQL_FULL")
+    println("Calculate final recommendation...")
+    timeUtils.time(generateRecommendations(similarUsers, targetUser, gameTitles, userGameDetails), "Generating Recommendations", "SQL_FULL")
   }
 
   /**
-   * Preprocess the data to explode the tags into individual words for each user.
+   * Preprocesses the input data by normalizing tags and preparing data for TF-IDF.
    *
-   * @return A tuple containing the exploded DataFrame (with user_id and word columns),
-   *         game titles DataFrame, and the user-games data DataFrame.
+   * @return A tuple containing:
+   *         - A DataFrame with exploded words for users.
+   *         - A DataFrame mapping game IDs to their titles.
+   *         - A DataFrame with detailed information about games and users.
    */
   private def preprocessData(): (DataFrame, DataFrame, DataFrame) = {
-    // Select the relevant columns from the recommendations and games data
-    val selectedRec = dataRec.select("app_id", "user_id")
-    val selectedGames = dataGames.select("app_id", "title")
-
-    // Join data to combine user, game, and metadata, and filter games with tags
-    val userGamesData = selectedRec
-      .join(selectedGames, Seq("app_id"))
-      .join(metadata.drop("description"), Seq("app_id"))
+    val userGameDetails = dfRec
+      .join(dfGames.select("app_id", "title"), Seq("app_id"))
+      .join(dfMetadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
-
-    // Clean and transform tags (remove spaces and lower case)
-    val userGamePairs = userGamesData
-      .withColumn("tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))) )
-      .withColumn("tagsString", concat_ws(",", col("tags")))
+      .withColumn("normalized_tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
+      .withColumn("tags_string", concat_ws(",", col("normalized_tags")))
       .drop("tags")
 
-    // Create a list of words (tags) for each user
-    val filteredData = userGamePairs
-      .withColumn("words", split(col("tagsString"), ","))
+    val userTagData = userGameDetails
+      .withColumn("tag_words", split(col("tags_string"), ","))
       .groupBy("user_id")
-      .agg(flatten(collect_list("words")).as("words"))
+      .agg(flatten(collect_list("tag_words")).as("tag_words"))
 
-    // Explode the list of words so we can calculate the term frequency (TF-IDF)
-    val explodedDF = filteredData
-      .withColumn("word", explode(col("words")))
+    val explodedTagsData = userTagData
+      .withColumn("word", explode(col("tag_words")))
       .select("user_id", "word")
       .persist(StorageLevel.MEMORY_AND_DISK)
 
-    val gamesTitles = dataGames.select("app_id", "title")
+    val gameTitles = dfGames.select("app_id", "title")
 
-    (explodedDF, gamesTitles, userGamesData)
+    (explodedTagsData, gameTitles, userGameDetails)
   }
 
   /**
-   * Calculate the Term Frequency-Inverse Document Frequency (TF-IDF) for each user and word.
+   * Calculates the Term Frequency-Inverse Document Frequency (TF-IDF) for tags associated with users.
    *
-   * @param explodedDF The exploded DataFrame containing user_id and word columns.
-   * @return A DataFrame with user_id, word, and tf-idf values.
+   * @param explodedTagsData A DataFrame containing users and their associated tags.
+   * @return A DataFrame containing TF-IDF values for each word-user pair.
    */
-  private def calculateTFIDF(explodedDF: DataFrame): DataFrame = {
-    // Count total words per user
-    val wordsPerUser = explodedDF.groupBy("user_id").agg(count("*").alias("total_words"))
+  private def calculateTFIDF(explodedTagsData: DataFrame): DataFrame = {
+    val wordCountsPerUser = explodedTagsData.groupBy("user_id").agg(count("*").alias("total_word_count"))
 
-    // Calculate term frequency (TF)
-    val tf = explodedDF.groupBy("user_id", "word")
-      .agg(count("*").alias("term_count"))
-      .join(wordsPerUser, "user_id")
-      .withColumn("term_frequency", col("term_count") / col("total_words"))
+    val tf = explodedTagsData.groupBy("user_id", "word")
+      .agg(count("*").alias("word_count"))
+      .join(wordCountsPerUser, "user_id")
+      .withColumn("tf", col("word_count") / col("total_word_count"))
 
-    // Calculate document frequency (DF) for each word
-    val dfDF = explodedDF.groupBy("word")
-      .agg(countDistinct("user_id").alias("document_frequency"))
+    val totalUsers = explodedTagsData.select("user_id").distinct().count()
 
-    // Calculate inverse document frequency (IDF)
-    val totalDocs = explodedDF.select("user_id").distinct().count()
-    val idfDF = dfDF.withColumn("idf", log(lit(totalDocs) / col("document_frequency")))
+    val idf = explodedTagsData.groupBy("word")
+      .agg(countDistinct("user_id").alias("user_count"))
+      .withColumn("idf", log(lit(totalUsers) / col("user_count")))
 
-    // Join TF and IDF to calculate TF-IDF
-    val tfidfValues = tf.join(idfDF, "word")
-      .withColumn("tf_idf", col("term_frequency") * col("idf"))
-      .select("user_id", "word", "tf_idf")
-
-    tfidfValues
+    tf.join(idf, "word")
+      .withColumn("tfidf", col("tf") * col("idf"))
+      .select("user_id", "word", "tfidf")
   }
 
   /**
-   * Compute the cosine similarity between the target user and all other users.
+   * Computes the cosine similarity between a target user and other users based on TF-IDF vectors.
    *
-   * @param tfidfDF The DataFrame containing the TF-IDF values for each user and word.
-   * @param targetUser The user_id of the target user for similarity calculation.
-   * @return A list of user_ids with the highest cosine similarity to the target user.
+   * @param tfidf    A DataFrame containing TF-IDF values for tags and users.
+   * @param targetUser The ID of the target user.
+   * @return A list of user IDs similar to the target user, ordered by similarity.
    */
-  private def computeCosineSimilarity(tfidfDF: DataFrame, targetUser: Int): List[Int] = {
+  private def computeCosineSimilarity(tfidf: DataFrame, targetUser: Int): List[Int] = {
     import spark.implicits._
 
-    // Filter out the target user's data and create a map of word -> TF-IDF values for the target user
-    val targetVector = tfidfDF.filter($"user_id" === targetUser)
-      .select("word", "tf_idf")
-      .withColumnRenamed("tf_idf", "target_tfidf")
+    val targetUserVector = tfidf.filter($"user_id" === targetUser)
+      .select("word", "tfidf")
+      .as[(String, Double)]
+      .collect()
+      .toMap
 
-    // Broadcast the target user's vector to all workers
-    val targetBroadcast = spark.sparkContext.broadcast(
-      targetVector.as[(String, Double)].collect().toMap
-    )
+    val broadcastTargetVector = spark.sparkContext.broadcast(targetUserVector)
 
-    // Compute cosine similarity for each user by calculating the numerator and norm
-    val similarityDF = tfidfDF
-      .filter($"user_id" =!= targetUser) // Exclude the target user from the similarity calculation
-      .mapPartitions { partition =>
-        val targetMap = targetBroadcast.value
-        val userScores = scala.collection.mutable.Map[Int, (Double, Double)]() // (numerator, norm)
+    val cosineSimilarity = tfidf
+      .filter($"user_id" =!= targetUser)
+      .mapPartitions { rows =>
+        val targetVector = broadcastTargetVector.value
+        val userScores = scala.collection.mutable.Map[Int, (Double, Double)]()
 
-        partition.foreach { row =>
+        rows.foreach { row =>
           val userId = row.getAs[Int]("user_id")
           val word = row.getAs[String]("word")
-          val tfidf = row.getAs[Double]("tf_idf")
-          val targetTfidf = targetMap.getOrElse(word, 0.0)
+          val tfidf = row.getAs[Double]("tfidf")
+          val targetTfidf = targetVector.getOrElse(word, 0.0)
 
-          // Update the numerator and norm for each user
-          val (numerator, norm) = userScores.getOrElse(userId, (0.0, 0.0))
-          userScores(userId) = (numerator + tfidf * targetTfidf, norm + tfidf * tfidf)
+          val (dotProduct, userNorm) = userScores.getOrElse(userId, (0.0, 0.0))
+          userScores(userId) = (dotProduct + tfidf * targetTfidf, userNorm + tfidf * tfidf)
         }
 
-        userScores.iterator.map { case (userId, (numerator, norm)) =>
-          (userId, numerator, Math.sqrt(norm))
+        userScores.iterator.map { case (userId, (dotProduct, userNorm)) =>
+          (userId, dotProduct, Math.sqrt(userNorm))
         }
       }
-      .toDF("user_id", "numerator", "user_norm")
+      .toDF("user_id", "dot_product", "user_norm")
 
-    // Calculate the norm for the target user
-    val targetNorm = Math.sqrt(targetBroadcast.value.values.map(v => v * v).sum)
+    val targetNorm = Math.sqrt(targetUserVector.values.map(v => v * v).sum)
 
-    // Compute cosine similarity and get the top 3 most similar users
-    val topUsers = similarityDF
-      .withColumn("cosine_similarity", $"numerator" / ($"user_norm" * lit(targetNorm)))
+    val topSimilarUsers = cosineSimilarity
+      .withColumn("cosine_similarity", $"dot_product" / ($"user_norm" * lit(targetNorm)))
       .orderBy(desc("cosine_similarity"))
       .limit(3)
       .select("user_id")
       .as[Int]
       .collect()
 
-    // Unpersist the broadcast variable to free up memory
-    targetBroadcast.unpersist()
-    topUsers.toList
+    broadcastTargetVector.unpersist()
+    topSimilarUsers.toList
   }
 
+
   /**
-   * Generate final game recommendations based on the most similar users.
+   * Generates the final recommendations for the target user
    *
-   * @param top3Users The list of user_ids with the highest cosine similarity to the target user.
-   * @param targetUser The user_id of the target user.
-   * @param gamesTitles The DataFrame containing game titles.
-   * @param userGamesData The DataFrame containing the games played by each user.
+   * @param similarUserIds  A List[Int] containing the top 3 similar users ids
+   * @param targetUser The ID of the target user.
+   * @param gameTitles A DataFrame mapping game IDs to their titles.
+   * @param userGameDetails - A DataFrame with detailed information about games and users.
    */
-  private def generateFinalRecommendations(top3Users: List[Int], targetUser: Int, gamesTitles: DataFrame, userGamesData: DataFrame): Unit = {
-    // Filter games played by the top 3 similar users
-    val gamesByTopUsers = userGamesData.filter(col("user_id").isin(top3Users: _*)).select("app_id", "user_id")
-    val gamesByTargetUser = userGamesData.filter(col("user_id") === targetUser).select("app_id")
+  private def generateRecommendations(similarUserIds: List[Int], targetUser: Int, gameTitles: DataFrame, userGameDetails: DataFrame): Unit = {
+    val gamesPlayedBySimilarUsers = userGameDetails
+      .filter(col("user_id").isin(similarUserIds: _*))
+      .select("app_id", "user_id")
 
-    // Get the recommended games by finding games played by similar users but not by the target user
-    val recommendedGames = gamesByTopUsers.join(gamesByTargetUser, Seq("app_id"), "left_anti")
-    val finalRecommendations = recommendedGames.join(gamesTitles.select("app_id", "title"), Seq("app_id"))
-      .groupBy("app_id","title")
-      .agg(collect_list("user_id").alias("user_ids"))
+    val gamesPlayedByTargetUser = userGameDetails
+      .filter(col("user_id") === targetUser)
+      .select("app_id")
 
-    finalRecommendations.show(finalRecommendations.count().toInt, truncate = false)
+    val recommendations = gamesPlayedBySimilarUsers
+      .join(gamesPlayedByTargetUser, Seq("app_id"), "left_anti")
+      .join(gameTitles, Seq("app_id"))
+      .groupBy("app_id", "title")
+      .agg(collect_list("user_id").alias("similar_user_ids"))
+
+    recommendations.show(recommendations.count().toInt, truncate = false)
   }
 }
