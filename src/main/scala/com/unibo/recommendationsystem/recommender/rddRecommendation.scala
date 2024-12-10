@@ -72,29 +72,25 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    * @return RDD[(String, Map[String, Double])], tf-idf score map for each userId
    */
   private def calculateTFIDF(userTagsGroup: RDD[(String, String)]): RDD[(String, Map[String, Double])] = {
-    def calculateTF(tags: String): Map[String, Double] = {
+    val userCount = userTagsGroup.count()
+    val idfValuesTag = userTagsGroup
+      .flatMap { case (_, tags) => tags.split(",").distinct }
+      .map(tag => (tag, 1))
+      .reduceByKey(_ + _)
+      .map { case (tag, count) => (tag, math.log(userCount.toDouble / count)) } // Calcola IDF
+      .collect()
+      .toMap
+
+    userTagsGroup.map { case (user, tags) =>
       val allTags = tags.split(",")
-      allTags.groupBy(identity).mapValues(_.length.toDouble / allTags.size)
+      val tfValues = allTags
+        .groupBy(identity)
+        .map { case (tag, occurrences) => (tag, occurrences.length.toDouble / allTags.length) } // Calcola TF
+
+      val tfidfValues = tfValues.map { case (tag, tf) => (tag, tf * idfValuesTag.getOrElse(tag, 0.0)) }
+
+      (user, tfidfValues)
     }
-
-    def calculateIDF(userTagsGroup: RDD[(String, String)]): Map[String, Double] = {
-      val userCount = userTagsGroup.count()
-      userTagsGroup.flatMap { case (_, tags) => tags.split(",").distinct }
-        .map((_, 1))
-        .reduceByKey(_ + _)
-        .map { case (tag, count) => (tag, math.log(userCount.toDouble / count)) }
-        .collect()
-        .toMap
-    }
-
-    val idfValuesTag: Map[String, Double] = calculateIDF(userTagsGroup)
-
-    val tfidfUserTags =  userTagsGroup.map { case (user, tags) =>
-      val tfValues = calculateTF(tags)
-      (user, tfValues.map { case (tag, tf) => (tag, tf * idfValuesTag.getOrElse(tag, 0.0)) })
-    }
-
-    tfidfUserTags
   }
 
 
@@ -106,31 +102,37 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    * @return Array[(String, Double)], the three userId with high cosine similarity score
    */
   private def computeCosineSimilarity(targetUser: Int, tfidfUserTags: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
+    val targetUserScoresOpt = tfidfUserTags
+      .filter(_._1 == targetUser.toString)
+      .map(_._2)
+      .collect()
+      .headOption
 
-    val tfIdfTargetUser = tfidfUserTags.filter(_._1 == targetUser.toString).map(_._2).collect().headOption
+    val targetUserScores = targetUserScoresOpt.get
+    val broadcastTargetUserScores = spark.sparkContext.broadcast(targetUserScores)
 
-    //Computes the dot product of two vectors: multiplies the target user’s score for each tag by the other user’s score for the same
-    def numerator = (targetScores: Map[String, Double], otherScores: Map[String, Double]) =>
-      targetScores.foldLeft(0.0) { case (acc, (tag, score)) => acc + score * otherScores.getOrElse(tag, 0.0) }
+    val similarities = tfidfUserTags
+      .filter(_._1 != targetUser.toString)
+      .mapPartitions(iter => {
+        val localTargetScores = broadcastTargetUserScores.value
+        iter.map { case (userId, otherUserScores) =>
+          val numerator = localTargetScores.foldLeft(0.0) { case (acc, (tag, score)) =>
+            acc + score * otherUserScores.getOrElse(tag, 0.0)
+          }
+          val targetMagnitude = math.sqrt(localTargetScores.values.map(x => x * x).sum)
+          val otherMagnitude = math.sqrt(otherUserScores.values.map(x => x * x).sum)
+          val denominator = targetMagnitude * otherMagnitude
+          val similarity = if (denominator == 0.0) 0.0 else numerator / denominator
+          (userId, similarity)
+        }
+      })
+      .filter(_._2 > 0.0)
 
-    //Computes the magnitude of a vector: computes the square root of the sum of the squares of all tf-idf values for the vector
-    def denominator = (scoresMap: Map[String, Double]) => math.sqrt(scoresMap.values.map(x => x * x).sum)
-
-    def cosineSimilarity = (target: Map[String, Double], other: Map[String, Double]) =>
-      numerator(target, other) / (denominator(target) * denominator(other))
-
-    //Finds the top 3 similar users
-    val top3SimilarUsers = tfIdfTargetUser.map { targetUserScores =>
-      tfidfUserTags
-        .filter(_._1 != targetUser.toString)
-        .map { case (userId, otherUserScores) => (userId, cosineSimilarity(targetUserScores, otherUserScores)) }
-        .collect()
-        .sortBy(-_._2)
-        .take(3)
-    }.getOrElse(Array.empty)
-
-    top3SimilarUsers
+    similarities.top(3)(Ordering.by(_._2))
   }
+
+
+
 
   /**
    * Generates game recommendations for the target user based on similar users' preferences
@@ -156,10 +158,15 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
     val recommendationsWithTitle = finalRecommendations
       .join(gamesData)
-      .map { case (appId, (userId, title)) => (appId, title, userId) }
+      .map { case (appId, (userId, title)) =>  (appId, (title, Set(userId))) }
+      .reduceByKey { case ((title, userIds1), (_, userIds2)) =>
+        (title, userIds1 ++ userIds2)
+      }
 
-    recommendationsWithTitle.collect().foreach { case (appId, title, userId) =>
-      println(s"Game ID: $appId, userId: $userId, title: $title")
+    recommendationsWithTitle.foreach { case (appId, (title, userIds)) =>
+      println(s"Game ID: $appId, userId: ${userIds.mkString(",")}, title: $title")
     }
   }
 }
+
+

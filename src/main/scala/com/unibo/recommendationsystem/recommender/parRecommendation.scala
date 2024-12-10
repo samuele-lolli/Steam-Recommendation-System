@@ -107,7 +107,7 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
       .par
       .filterKeys(_ != targetUser)
       .map { case (userId, vector) => userId -> cosineSimilarity(vector) }
-      .filter(_._2 > 0) // Filter out users with zero similarity
+      .filter(_._2 > 0)
       .toList
       .sortBy(-_._2)
       .take(3)
