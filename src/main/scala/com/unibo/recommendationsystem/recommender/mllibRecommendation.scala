@@ -16,16 +16,16 @@ class mllibRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: Dat
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (preprocessedData, gameTitles, userGameDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "MlLib")
+    val (preprocessedData, gameTitles, userGameDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "MLLIB")
 
     println("Calculate term frequency and inverse document frequency...")
-    val tfidf = timeUtils.time(calculateTFIDF(preprocessedData), "Calculating TF-IDF", "MlLib")
+    val tfidf = timeUtils.time(calculateTFIDF(preprocessedData), "Calculating TF-IDF", "MLLIB")
 
     println("Calculate cosine similarity to get similar users...")
-    val similarUsers = timeUtils.time(computeCosineSimilarity(tfidf, targetUser), "Getting Similar Users", "MlLib")
+    val similarUsers = timeUtils.time(computeCosineSimilarity(tfidf, targetUser), "Getting Similar Users", "MLLIB")
 
     println("Calculate final recommendation...")
-    timeUtils.time(generateFinalRecommendations(similarUsers, targetUser, gameTitles, userGameDetails), "Generating Recommendations", "MlLib")
+    timeUtils.time(generateFinalRecommendations(similarUsers, targetUser, gameTitles, userGameDetails), "Generating Recommendations", "MLLIB")
   }
 
   /**

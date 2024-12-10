@@ -14,16 +14,16 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (preprocessedData, gameTitles, userGameDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL_FULL")
+    val (preprocessedData, gameTitles, userGameDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "SQL")
 
     println("Calculate term frequency and inverse document frequency...")
-    val tfidf = timeUtils.time(calculateTFIDF(preprocessedData), "Calculating TF-IDF", "SQL_FULL")
+    val tfidf = timeUtils.time(calculateTFIDF(preprocessedData), "Calculating TF-IDF", "SQL")
 
     println("Calculate cosine similarity to get similar users...")
-    val similarUsers = timeUtils.time(computeCosineSimilarity(tfidf, targetUser), "Finding Similar Users", "SQL_FULL")
+    val similarUsers = timeUtils.time(computeCosineSimilarity(tfidf, targetUser), "Finding Similar Users", "SQL")
 
     println("Calculate final recommendation...")
-    timeUtils.time(generateRecommendations(similarUsers, targetUser, gameTitles, userGameDetails), "Generating Recommendations", "SQL_FULL")
+    timeUtils.time(generateRecommendations(similarUsers, targetUser, gameTitles, userGameDetails), "Generating Recommendations", "SQL")
   }
 
   /**

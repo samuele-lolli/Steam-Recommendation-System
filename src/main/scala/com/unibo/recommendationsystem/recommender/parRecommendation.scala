@@ -1,202 +1,144 @@
 package com.unibo.recommendationsystem.recommender
 
 import com.unibo.recommendationsystem.utils.timeUtils
+import scala.collection.parallel.ParMap
 
-import scala.collection.parallel.{ParMap, ParSeq}
-
-class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, String], dataMetadataGames: Map[Int, Array[String]]) {
+class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, String], dataMetaGames: Map[Int, Array[String]]) {
 
   /**
-   * (Parallel version) Generates personalized recommendations for a target user
+   * This method is the entry point for generating game recommendations for a given target user.
+   * It orchestrates the entire process: preprocessing data, calculating TF-IDF, computing cosine similarities,
+   * and generating final recommendations.
    *
-   * @param targetUser Int, The ID of the user for which we are generating recommendations
-   *
+   * @param targetUser The ID of the target user for whom the recommendations will be generated.
    */
   def recommend(targetUser: Int): Unit = {
     println("Preprocessing data...")
-    val (userTagsMap, userAppDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "Par")
-    println("Calculate term frequency and inverse document frequency...")
-    val tfidfValuesPar = timeUtils.time(calculateTFIDF(userTagsMap), "Calculating TF-IDF", "Par")
-    println("Calculate cosine similarity to get similar users...")
-    val topUsersSimilarityPar= timeUtils.time(computeCosineSimilarity(tfidfValuesPar, targetUser), "Getting Similar Users", "Par")
-    println("Calculate final recommendation...")
-    timeUtils.time(generateFinalRecommendations(topUsersSimilarityPar, targetUser, userAppDetails), "Generating Recommendations", "Par")
+    val (userTagsMap, userAppDetails) = timeUtils.time(preprocessData(), "Preprocessing Data", "PAR")
+
+    println("Calculating term frequency and inverse document frequency...")
+    val tfidfUserTags = timeUtils.time(calculateTFIDF(userTagsMap), "Calculating TF-IDF", "PAR")
+
+    println("Calculating cosine similarity to find similar users...")
+    val topUsersSimilarity = timeUtils.time(computeCosineSimilarity(tfidfUserTags, targetUser), "Getting Similar Users", "PAR")
+
+    println("Generating final recommendations...")
+    timeUtils.time(generateFinalRecommendations(topUsersSimilarity, targetUser, userAppDetails), "Generating Recommendations", "PAR")
   }
 
   /**
-   * Preprocesses the input data to create intermediate scala.collections needed for further calculations.
+   * Preprocesses the data by associating each user with their corresponding games, titles, and tags.
+   * This step also prepares a mapping of user tags that will be used for calculating TF-IDF.
    *
-   * @return A tuple of:
-   *         - ParSeq[(Int, String)], map each user with his tags for tf-idf calculation
-   *         - ParSeq[(Int, Int, String, Array[String])], full user-item metadata
+   * @return A tuple consisting of:
+   *         - A map of users and their concatenated tags.
+   *         - A list of detailed user game information.
    */
-  private def preprocessData(): (ParSeq[(Int, String)], ParSeq[(Int, Int, String, Array[String])]) = {
-    //Combines user, game, and metadata details, filtering out empty tags
-    val userAppDetails: ParSeq[(Int, Int, String, Array[String])] = dataRec
-      .par
-      .flatMap { case (userId, appIds) =>
-        appIds.flatMap { appId =>
-          for {
-            title <- dataGames.get(appId)
-            tags <- dataMetadataGames.get(appId)
-          } yield (userId, appId, title, tags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
-        }
-      }.filter(_._4.nonEmpty).toSeq
-
-    val userTags: ParSeq[(Int, Int, String, String)] = userAppDetails.map(d =>
-      (d._1, d._2, d._3, d._4.mkString(","))
-    )
-
-    val groupedUserTags: ParSeq[(Int, Seq[String])] = userTags.map { case (id, _, _, tags) =>
-      val cleanedTags = tags.split(",").filter(_.nonEmpty).toSeq
-      (id, cleanedTags)
-    }.filter(_._2.nonEmpty)
-
-    val userTagsVector: ParSeq[(Int, ParSeq[String])] = groupedUserTags
-      .groupBy(_._1)
-      .map { case (id, grouped) =>
-        val mergedTags = grouped.flatMap(_._2)
-        (id, mergedTags)
-      }.toSeq
-
-    val explodeUserTag: Seq[(Int, String)] = userTagsVector
-      .flatMap { case (userId, tags) => tags.map(tag => (userId, tag)) }.seq
-
-    (explodeUserTag.par, userAppDetails)
-  }
-  /*
-   * userTagsCouples
-   * (5382866,strategy)
-   * (5382866,classic)
-   * (5382866,funny)
-   * (5382866,turn-based)
-   * (5382866,local multiplayer)
-   * (5382866,classic)
-   * (5382866,2d)
-   * (5382866,retro)
-   * (5382866,online co-op)
-   * (5382866,multiplayer)
-   * (5382866,anime)
-   * (5382866,arcade)
-   */
-
-  /*
-   * userAppDetails
-   * (5382866,272270,Torment: Tides of Numenera, [...tags...] )
-   * (5382866,343340,Tiamat X, [...tags...])
-   * (5382866,233470,Evoland,[...tags...] )
-   * (5382866,599880,Tequila Zombies 3, [...tags...] )
-   * (5382866,357190,ULTIMATE MARVEL VS. CAPCOM 3, [...tags...])
-   * (5382866,544750,SOULCALIBUR VI, [...tags...])
-   * (5382866,1659600,Teenage Mutant Ninja Turtles: The Cowabunga Collection, [...tags...])
-   * (5382866,483420,Adam Wolfe, [...tags...])
-   * (5382866,296770,Real Boxing™, [...tags...])
- */
-
-  /**
-   * Computes TF-IDF values for all users based on their tags
-   * @param userTagsMap ParSeq[(Int, String)], map each user with his tags for tf-idf calculation
-   * @return ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
-   */
-  private def calculateTFIDF(userTagsMap: ParSeq[(Int, String)]): ParMap[Int, Map[String, Double]] = {
-    //TF
-    def calculateTF(tags: String): Map[String, Double] = {
-      val allTags = tags.split(",")
-      allTags.groupBy(identity).map { case (key, values) =>
-        key -> values.length.toDouble / allTags.length
+  private def preprocessData(): (ParMap[Int, String], List[(Int, Int, String, Array[String])]) = {
+    val userAppDetails = dataRec.par.flatMap { case (userId, appIds) =>
+      appIds.flatMap { appId =>
+        for {
+          appTitle <- dataGames.get(appId)
+          appTags <- dataMetaGames.get(appId)
+        } yield (userId, appId, appTitle, appTags.map(_.trim.toLowerCase.replaceAll("\\s+", " ")))
       }
-    }
+    }.filter(_._4.nonEmpty).toList
 
-    //IDF
-    def calculateIDF(userTagsMap: ParMap[Int, String]): Map[String, Double] = {
-      val userCount = userTagsMap.size
-      userTagsMap.values
-        .par // Parallel processing
-        .flatMap(_.split(",").distinct)
-        .groupBy(identity)
-        .map { case (word, occurrences) =>
-          (word, math.log(userCount.toDouble / occurrences.size))
-        }
-        .seq
-    }
-
-    val userTagsGroupMap: ParMap[Int, String] = userTagsMap
+    val userTagsMap = userAppDetails
+      .par
       .groupBy(_._1)
-      .mapValues(_.map(_._2).mkString(","))
+      .map { case (userId, details) =>
+        userId -> details.flatMap(_._4).mkString(",")
+      }
 
-    val idfValuesTag: Map[String, Double] = calculateIDF(userTagsGroupMap)
-
-    //TFIDF
-    userTagsGroupMap.map { case (user, words) =>
-      val tfValues = calculateTF(words)
-      user -> tfValues.map { case (word, tf) => word -> tf * idfValuesTag.getOrElse(word, 0.0) }
-    }
+    (userTagsMap, userAppDetails)
   }
-  /*
-   * tfIDFValues
-   * (7785031,Map(multiplayer -> 0.05147607544411006, physics -> 0.2039327116805472, ...))
-   * (7614324,Map(turn-based combat -> 0.058421854161816944, funny -> 0.024955196358551045, ...))
-   * (5107791,Map(1980s -> 0.05896140840799852, indie -> 0.007796680564226543, ...))
-   */
-
 
   /**
-   * Computes cosine similarity between the target user and all other users
+   * Calculates the Term Frequency-Inverse Document Frequency (TF-IDF) for each user based on the tags they have associated
+   * with the games they played.
    *
-   * @param tfidfUserTags ParMap[Int, Map[String, Double] ], A map where each user ID maps to another map of tags and their respective TF-IDF scores
-   * @param targetUser Int, the ID of the target user
-   * @return A list of the top 3 most similar user IDs
+   * @param userTagsMap A map of users and their corresponding tags.
+   * @return A map of users and their TF-IDF values for each tag.
+   */
+  private def calculateTFIDF(userTagsMap: ParMap[Int, String]): ParMap[Int, Map[String, Double]] = {
+    import scala.collection.compat._
+
+    val totalUsers = userTagsMap.size
+
+    // Calculate the inverse document frequency (IDF) for each tag
+    val idfValues = userTagsMap.values
+      .par
+      .flatMap(_.split(",").distinct)
+      .groupBy(identity)
+      .seq.view
+      .mapValues(tags => math.log(totalUsers.toDouble / tags.size))
+      .toMap
+
+    // For each user, calculate the term frequency (TF) and multiply it by the IDF for each tag
+    userTagsMap.par.map { case (userId, tags) =>
+      val tagList = tags.split(",")
+      val tfValues = tagList.groupBy(identity).view.mapValues(_.length.toDouble / tagList.length).toMap
+      userId -> tfValues.map { case (tag, tf) => tag -> tf * idfValues.getOrElse(tag, 0.0) }
+    }
+  }
+
+  /**
+   * Computes the cosine similarity between the target user's TF-IDF vector and the TF-IDF vectors of other users.
+   *
+   * @param tfidfUserTags A map of users and their corresponding TF-IDF vectors.
+   * @param targetUser The ID of the target user for whom similarities will be calculated.
+   * @return A list of the top 3 most similar users to the target user, sorted by similarity.
    */
   private def computeCosineSimilarity(tfidfUserTags: ParMap[Int, Map[String, Double]], targetUser: Int): List[Int] = {
+    val targetVector = tfidfUserTags.getOrElse(targetUser, Map.empty)
+    val targetMagnitude = math.sqrt(targetVector.values.map(v => v * v).sum)
 
-    def cosineSimilarity(targetUserScores: Map[String, Double], otherUserScores: Map[String, Double]): Double = {
-      val numerator = targetUserScores.keys.map(k => targetUserScores.getOrElse(k, 0.0) * otherUserScores.getOrElse(k, 0.0)).sum
-      val denominator = math.sqrt(targetUserScores.values.map(v => v * v).sum) * math.sqrt(otherUserScores.values.map(v => v * v).sum)
-      if (denominator == 0) 0.0 else numerator / denominator
+    // Cosine similarity calculation for two vectors
+    def cosineSimilarity(otherVector: Map[String, Double]): Double = {
+      val dotProduct = targetVector.keySet.intersect(otherVector.keySet).view
+        .map(tag => targetVector(tag) * otherVector(tag))
+        .sum
+      val otherMagnitude = math.sqrt(otherVector.values.map(v => v * v).sum)
+      if (otherMagnitude == 0.0) 0.0 else dotProduct / (targetMagnitude * otherMagnitude)
     }
 
-    val targetUserScores = tfidfUserTags(targetUser)
-
-    //Filter out users with zero TF-IDF vectors
-    val nonZeroTfidf = tfidfUserTags.seq.view
-      .filter { case (_, vector) => math.sqrt(vector.values.map(v => v * v).sum) != 0 }
-
-    val topUsers = nonZeroTfidf
-      .filter { case (key, _) => key != targetUser } // Exclude target user
+    tfidfUserTags
       .par
-      .map { case (key, otherUserScores) =>
-        key -> cosineSimilarity(targetUserScores, otherUserScores)
-      }
+      .filterKeys(_ != targetUser)
+      .map { case (userId, vector) => userId -> cosineSimilarity(vector) }
+      .filter(_._2 > 0) // Filter out users with zero similarity
       .toList
       .sortBy(-_._2)
       .take(3)
       .map(_._1)
-
-    topUsers
   }
 
   /**
-   * Generates and prints final game recommendations for a target user based on games played by similar users
+   * Generates the final game recommendations for the target user based on the top similar users' preferences.
+   * It filters out games that the target user has already played and recommends new ones.
    *
-   * @param topUsers List[Int], list of IDs of the most similar users
-   * @param targetUser Int, the ID of the target user
-   * @param userAppDetails ParSeq[(Int, Int, String, Array[String])], full user-item metadata
+   * @param topUsers A list of the top similar users to the target user.
+   * @param targetUser The ID of the target user.
+   * @param userAppDetails A list of all user game details.
    */
-  private def generateFinalRecommendations(topUsers: List[Int], targetUser: Int, userAppDetails: ParSeq[(Int, Int, String, Array[String])]): Unit = {
-    //Get all games played by the target user
-    val gamesByTargetUser = userAppDetails.filter(_._1 == targetUser)
-      .map(_._2)
+  private def generateFinalRecommendations(
+                                            topUsers: List[Int],
+                                            targetUser: Int,
+                                            userAppDetails: List[(Int, Int, String, Array[String])]
+                                          ): Unit = {
+    val targetUserGames = userAppDetails.collect {
+      case (userId, gameId, _, _) if userId == targetUser => gameId
+    }.toSet
 
-    //Group games played by top users excluding target user
-    val recommendedGames = userAppDetails.filter {
-      case (userId, gameId, _, _) =>
-        topUsers.contains(userId) && !gamesByTargetUser.exists(_ == gameId)
-    }.groupBy(_._2)
+    val recommendedGames = userAppDetails.par.collect {
+      case (userId, gameId, gameTitle, _) if topUsers.contains(userId) && !targetUserGames.contains(gameId) =>
+        (gameId, gameTitle, userId)
+    }.groupBy(_._1)
 
-    recommendedGames.foreach { case (gameId, userGames) =>
-      val userIds = userGames.map(_._1).mkString(", ")
-      val gameInfo = userGames.head
-      println(s"Game ID: $gameId, Title: ${gameInfo._3}, Users: $userIds")
+    recommendedGames.foreach { case (gameId, gameDetails) =>
+      val users = gameDetails.map(_._3).mkString(", ")
+      println(s"Game ID: $gameId, Title: ${gameDetails.head._2}, Users: $users")
     }
   }
 }
