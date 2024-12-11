@@ -56,7 +56,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val userTagsGroup = appIdUserDetails
       .flatMap { case (_, tags, userId) => tags.split(",").map(tag => (userId, tag)) }
       .reduceByKey(_ + "," + _)
-      .filter(_._2.nonEmpty)
       .cache()
 
     //Extracts titles of the apps to use them in ifnal recommendation
