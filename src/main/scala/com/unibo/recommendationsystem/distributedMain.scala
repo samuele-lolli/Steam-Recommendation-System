@@ -24,18 +24,18 @@ object distributedMain {
       .config("spark.speculation", "true") // Enable speculative execution to handle stragglers.
       .getOrCreate()
 
-    val basePath = "gs://dataproc-staging-us-central1-744829709426-p8bgsxuj/"
+    val basePath = "gs://dataproc-staging-us-central1-1020270449793-agano56l/data10rev/dataset1/"
     timeUtils.setLogFilePath(basePath+"result.txt")
 
     val targetUser = 4893896
 
-    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "data/recommendations.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.50, 12345)
-    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "data/games.csv")
-    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "data/games_metadata.json")
+    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations_f.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.24, 44)
+    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games_f.csv")
+    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata_f.json")
 
     /* Initialize and run the MLLIB recommender algorithm. */
     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-    timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MlLib")
+    timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MLLIB")
 
     /* Initialize and run the RDD-based recommender algorithm. */
     val rddRecommender = new rddRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
@@ -43,7 +43,7 @@ object distributedMain {
 
     /* Initialize and run the SQL-full-based recommender algorithm. */
     val sqlRecommender = new sqlRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
-    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL_FULL")
+    timeUtils.time(sqlRecommender.recommend(targetUser), "Total time execution SQL_FULL", "SQL")
   }
 }
 
