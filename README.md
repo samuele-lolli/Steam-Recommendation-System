@@ -88,11 +88,11 @@ Il sistema è suddiviso in diverse versioni del codice che implementano approcci
    - Migliora le performance rispetto alla versione sequenziale, ma ha le stesse limitazioni.
 
 3. **Versioni Distribuite con Spark**
-   - **Spark SQL (2 varianti)**
+   - **Spark SQL**
    - **Spark RDD**
-   - **Spark MLLIB** (utilizzando librerie Spark per TF-IDF)
+   - **Spark MLLIB** (utilizzando librerie Spark per TF-IDF e Cosine Similarity)
 
-Queste versioni supportano l'elaborazione di grandi dataset e sono eseguibili in modalità distribuita su Google Cloud DataProc.
+Queste versioni supportano l'elaborazione di grandi dataset e sono eseguibili su cluster distribuiti su Google Cloud DataProc.
 
 ---
 
