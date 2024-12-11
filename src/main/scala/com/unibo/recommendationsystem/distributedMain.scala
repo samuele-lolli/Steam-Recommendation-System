@@ -33,7 +33,7 @@ object distributedMain {
     val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games_f.csv")
     val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata_f.json")
 
-    /* Initialize and run the MLLIB recommender algorithm. */
+    /* Initialize and run the MLLIB recommender algorithm.*/
     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
     timeUtils.time(mllibRecommender.recommend(targetUser), "Total time execution MlLib", "MLLIB")
 
