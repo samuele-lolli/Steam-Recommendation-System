@@ -129,7 +129,7 @@ Scarica e installa l'IDE da [questo link][intellij].
    * [**Scala**][scala-plugin-link]
    * [**Spark**][spark-plugin-link]
 ### Scarica il dataset
-   Scarica il dataset da [kaggle][ds-link] ed estrailo dal file ```.zip```
+   Scarica il dataset da [Kaggle][ds-link] ed estrailo dal file ```.zip```
    Nel progetto, crea una cartella ```steam-dataset``` e sposta al suo interno tutto il contenuto di ```archive.zip```
 
 ### Versioni Java e Scala
