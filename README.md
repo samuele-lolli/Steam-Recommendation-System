@@ -126,8 +126,8 @@ Scarica e installa l'IDE da [questo link][intellij].
 ### Scaricare i plugion
    Una volta che IntelliJ è installato, avvialo e clicca sull'ingranaggio nella barra degli strumenti in alto a destra. 
    Clicca su **Plugins**, quindi cerca e installa:
-    - [**Scala**][scala-plugin-link]
-    - [**Spark**][spark-plugin-link]
+   * [**Scala**][scala-plugin-link]
+   * [**Spark**][spark-plugin-link]
 ### Scarica il dataset
    Scarica il dataset da [kaggle][ds-link] ed estrailo dal file ```.zip```
    Nel progetto, crea una cartella ```steam-dataset``` e sposta al suo interno tutto il contenuto di ```archive.zip```
