@@ -186,4 +186,10 @@ Il progetto è stato realizzato per l'esame di **Scalable and Cloud Programming*
 [leonardo]: https://github.com/leonardovincenzi1998
 [samuele]: https://github.com/samuele-lolli
 [giulio]: https://github.com/gbekss
+[gcloud-link]: https://cloud.google.com/sdk/docs/install?hl=it
+[github-repo-link]: https://github.com/samuele-lolli/recommendationsystem.git
+[intellij]: https://www.jetbrains.com/idea/download/
+[scala-plugin-link]: https://plugins.jetbrains.com/plugin/1347-scala
+[spark-plugin-link]: https://plugins.jetbrains.com/plugin/21700-spark
+
 
