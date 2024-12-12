@@ -153,7 +153,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     val finalRecommendations = appIdUserDetails
       .filter { case (appId, _, user) => similarUsers.contains(user) && !targetUserAppIds.contains(appId) }
       .map { case (appId, _, user) => (appId, user) }
-      .distinct()
 
     val recommendationsWithTitle = finalRecommendations
       .join(gamesData)
