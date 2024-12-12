@@ -101,40 +101,45 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
 
     val broadcastTargetVector = spark.sparkContext.broadcast(targetUserVector)
 
-    val cosineSimilarity = tfidf
+    val similarities = tfidf
       .filter($"user_id" =!= targetUser)
-      .mapPartitions { rows =>
+      .mapPartitions { partitions =>
         val targetVector = broadcastTargetVector.value
-        val userScores = scala.collection.mutable.Map[Int, (Double, Double)]()
+        val userScores = scala.collection.mutable.Map[Int, (Double, Double)]() // (dotProduct, userNorm)
 
-        rows.foreach { row =>
+        partitions.foreach { row =>
           val userId = row.getAs[Int]("user_id")
           val word = row.getAs[String]("word")
           val tfidf = row.getAs[Double]("tfidf")
-          val targetTfidf = targetVector.getOrElse(word, 0.0)
 
+          val targetTfidf = targetVector.getOrElse(word, 0.0)
           val (dotProduct, userNorm) = userScores.getOrElse(userId, (0.0, 0.0))
-          userScores(userId) = (dotProduct + tfidf * targetTfidf, userNorm + tfidf * tfidf)
+
+          userScores(userId) = (
+            dotProduct + tfidf * targetTfidf,
+            userNorm + tfidf * tfidf
+          )
         }
 
+        val targetNorm = math.sqrt(targetVector.values.map(v => v * v).sum)
         userScores.iterator.map { case (userId, (dotProduct, userNorm)) =>
-          (userId, dotProduct, Math.sqrt(userNorm))
+          val similarity = if (userNorm == 0.0 || targetNorm == 0.0) 0.0
+          else dotProduct / (math.sqrt(userNorm) * targetNorm)
+          (userId, similarity)
         }
       }
-      .toDF("user_id", "dot_product", "user_norm")
+      .toDF("user_id", "cosine_similarity")
 
-    val targetNorm = Math.sqrt(targetUserVector.values.map(v => v * v).sum)
-
-    val topSimilarUsers = cosineSimilarity
-      .withColumn("cosine_similarity", $"dot_product" / ($"user_norm" * lit(targetNorm)))
-      .orderBy(desc("cosine_similarity"))
+    val topSimilarUsers = similarities
+      .orderBy($"cosine_similarity".desc)
       .limit(3)
       .select("user_id")
       .as[Int]
       .collect()
+      .toList
 
     broadcastTargetVector.unpersist()
-    topSimilarUsers.toList
+    topSimilarUsers
   }
 
 
