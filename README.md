@@ -191,5 +191,5 @@ Il progetto è stato realizzato per l'esame di **Scalable and Cloud Programming*
 [intellij]: https://www.jetbrains.com/idea/download/
 [scala-plugin-link]: https://plugins.jetbrains.com/plugin/1347-scala
 [spark-plugin-link]: https://plugins.jetbrains.com/plugin/21700-spark
-
+[ds-link]: https://www.kaggle.com/datasets/antonkozyriev/game-recommendations-on-steam
 
