@@ -103,11 +103,11 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
 
     val similarities = tfidf
       .filter($"user_id" =!= targetUser)
-      .mapPartitions { partitions =>
+      .mapPartitions { partition =>
         val targetVector = broadcastTargetVector.value
         val userScores = scala.collection.mutable.Map[Int, (Double, Double)]() // (dotProduct, userNorm)
 
-        partitions.foreach { row =>
+        partition.foreach { row =>
           val userId = row.getAs[Int]("user_id")
           val word = row.getAs[String]("word")
           val tfidf = row.getAs[Double]("tfidf")
