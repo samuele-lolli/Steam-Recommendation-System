@@ -95,14 +95,13 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
         .map(tag => targetVector(tag) * otherVector(tag))
         .sum
       val otherMagnitude = math.sqrt(otherVector.values.map(v => v * v).sum)
-      if (otherMagnitude == 0.0) 0.0 else dotProduct / (targetMagnitude * otherMagnitude)
+      dotProduct / (targetMagnitude * otherMagnitude)
     }
 
     tfidfUserTags
       .filterKeys(_ != targetUser)
       .toList
       .map { case (userId, vector) => userId -> cosineSimilarity(vector) }
-      .filter(_._2 > 0)
       .sortBy(-_._2)
       .take(3)
       .map(_._1)
