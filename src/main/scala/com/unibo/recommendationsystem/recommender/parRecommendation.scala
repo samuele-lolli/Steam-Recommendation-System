@@ -66,7 +66,6 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
 
     val totalUsers = userTagsMap.size
 
-    // Calculate the inverse document frequency (IDF) for each tag
     val idfValues = userTagsMap.values
       .par
       .flatMap(_.split(",").distinct)
@@ -75,7 +74,6 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
       .mapValues(tags => math.log(totalUsers.toDouble / tags.size))
       .toMap
 
-    // For each user, calculate the term frequency (TF) and multiply it by the IDF for each tag
     userTagsMap.par.map { case (userId, tags) =>
       val tagList = tags.split(",")
       val tfValues = tagList.groupBy(identity).view.mapValues(_.length.toDouble / tagList.length).toMap
@@ -94,7 +92,6 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
     val targetVector = tfidfUserTags.getOrElse(targetUser, Map.empty)
     val targetMagnitude = math.sqrt(targetVector.values.map(v => v * v).sum)
 
-    // Cosine similarity calculation for two vectors
     def cosineSimilarity(otherVector: Map[String, Double]): Double = {
       val dotProduct = targetVector.keySet.intersect(otherVector.keySet).view
         .map(tag => targetVector(tag) * otherVector(tag))

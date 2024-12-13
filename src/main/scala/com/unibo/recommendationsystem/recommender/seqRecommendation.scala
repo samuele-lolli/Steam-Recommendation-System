@@ -35,7 +35,6 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
   private def preprocessData(): (Map[Int, String], List[(Int, Int, String, Array[String])]) = {
     import scala.collection.compat._
 
-    // Create userAppDetails by mapping userId to their games with titles and tags
     val userAppDetails = dataRec.toList.flatMap { case (userId, appIds) =>
       appIds.flatMap { appId =>
         for {
@@ -45,9 +44,8 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
       }
     }.filter(_._4.nonEmpty)
 
-    // Group by user and concatenate tags, removing duplicates
     val userTagsMap = userAppDetails
-      .groupMapReduce(_._1)(details => details._4.mkString(",").split(",").filter(_.nonEmpty).toSeq)(_ ++ _)
+      .groupMapReduce(_._1)(details => details._4.filter(_.nonEmpty).toSeq)(_ ++ _)
       .view
       .mapValues(_.mkString(","))
       .toMap
@@ -67,7 +65,6 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
 
     val totalUsers = userTagsMap.size
 
-    // Calculate the inverse document frequency (IDF) for each tag
     val idfValues = userTagsMap.values
       .flatMap(_.split(",").distinct)
       .groupBy(identity)
@@ -75,7 +72,6 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
       .mapValues(tags => math.log(totalUsers.toDouble / tags.size))
       .toMap
 
-    // For each user, calculate the term frequency (TF) and multiply it by the IDF for each tag
     userTagsMap.map { case (userId, tags) =>
       val tagList = tags.split(",")
       val tfValues = tagList.groupBy(identity).view.mapValues(_.length.toDouble / tagList.length).toMap
@@ -94,7 +90,6 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
     val targetVector = tfidfUserTags.getOrElse(targetUser, Map.empty)
     val targetMagnitude = math.sqrt(targetVector.values.map(v => v * v).sum)
 
-    // Cosine similarity calculation for two vectors
     def cosineSimilarity(otherVector: Map[String, Double]): Double = {
       val dotProduct = targetVector.keySet.intersect(otherVector.keySet).view
         .map(tag => targetVector(tag) * otherVector(tag))
@@ -107,7 +102,7 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
       .filterKeys(_ != targetUser)
       .toList
       .map { case (userId, vector) => userId -> cosineSimilarity(vector) }
-      .filter(_._2 > 0) // Filter out users with zero similarity
+      .filter(_._2 > 0)
       .sortBy(-_._2)
       .take(3)
       .map(_._1)
