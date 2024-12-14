@@ -99,13 +99,14 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
       .collect()
       .toMap
 
+    val targetNorm = math.sqrt(targetUserVector.values.map(v => v * v).sum)
     val broadcastTargetVector = spark.sparkContext.broadcast(targetUserVector)
 
     val similarities = tfidf
       .filter($"user_id" =!= targetUser)
       .mapPartitions { partition =>
         val targetVector = broadcastTargetVector.value
-        val userScores = scala.collection.mutable.Map[Int, (Double, Double)]() // (dotProduct, userNorm)
+        val userScores = scala.collection.mutable.Map[Int, (Double, Double)]()
 
         partition.foreach { row =>
           val userId = row.getAs[Int]("user_id")
@@ -121,7 +122,6 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
           )
         }
 
-        val targetNorm = math.sqrt(targetVector.values.map(v => v * v).sum)
         userScores.iterator.map { case (userId, (dotProduct, userNorm)) =>
           val similarity = if (userNorm == 0.0 || targetNorm == 0.0) 0.0
           else dotProduct / (math.sqrt(userNorm) * targetNorm)
@@ -141,6 +141,7 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
     broadcastTargetVector.unpersist()
     topSimilarUsers
   }
+
 
 
   /**

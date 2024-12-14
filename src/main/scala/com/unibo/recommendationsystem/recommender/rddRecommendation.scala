@@ -101,13 +101,14 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    * @return Array[(String, Double)], the three userId with high cosine similarity score
    */
   private def computeCosineSimilarity(targetUser: Int, tfidfUserTags: RDD[(String, Map[String, Double])]): Array[(String, Double)] = {
-    val targetUserScoresOpt = tfidfUserTags
+
+    val targetUserScores = tfidfUserTags
       .filter(_._1 == targetUser.toString)
       .map(_._2)
       .collect()
       .headOption
+      .get
 
-    val targetUserScores = targetUserScoresOpt.get
     val targetMagnitude = math.sqrt(targetUserScores.values.map(x => x * x).sum)
     val broadcastTargetUserScores = spark.sparkContext.broadcast(targetUserScores)
 
@@ -127,10 +128,9 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       })
       .filter(_._2 > 0.0)
 
+    broadcastTargetUserScores.unpersist()
     similarities.takeOrdered(3)(Ordering.by(-_._2))
   }
-
-
 
 
   /**
