@@ -108,6 +108,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       .headOption
 
     val targetUserScores = targetUserScoresOpt.get
+    val targetMagnitude = math.sqrt(targetUserScores.values.map(x => x * x).sum)
     val broadcastTargetUserScores = spark.sparkContext.broadcast(targetUserScores)
 
     val similarities = tfidfUserTags
@@ -118,7 +119,6 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
           val numerator = localTargetScores.foldLeft(0.0) { case (acc, (tag, score)) =>
             acc + score * otherUserScores.getOrElse(tag, 0.0)
           }
-          val targetMagnitude = math.sqrt(localTargetScores.values.map(x => x * x).sum)
           val otherMagnitude = math.sqrt(otherUserScores.values.map(x => x * x).sum)
           val denominator = targetMagnitude * otherMagnitude
           val similarity = if (denominator == 0.0) 0.0 else numerator / denominator
@@ -127,7 +127,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       })
       .filter(_._2 > 0.0)
 
-    similarities.top(3)(Ordering.by(_._2))
+    similarities.takeOrdered(3)(Ordering.by(-_._2))
   }
 
 
@@ -166,5 +166,3 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
     }
   }
 }
-
-
