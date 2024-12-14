@@ -97,14 +97,13 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
         .map(tag => targetVector(tag) * otherVector(tag))
         .sum
       val otherMagnitude = math.sqrt(otherVector.values.map(v => v * v).sum)
-      if (otherMagnitude == 0.0) 0.0 else dotProduct / (targetMagnitude * otherMagnitude)
+      dotProduct / (targetMagnitude * otherMagnitude)
     }
 
     tfidfUserTags
       .par
       .filterKeys(_ != targetUser)
       .map { case (userId, vector) => userId -> cosineSimilarity(vector) }
-      .filter(_._2 > 0)
       .toList
       .sortBy(-_._2)
       .take(3)
@@ -119,11 +118,7 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
    * @param targetUser The ID of the target user.
    * @param userAppDetails A list of all user game details.
    */
-  private def generateFinalRecommendations(
-                                            topUsers: List[Int],
-                                            targetUser: Int,
-                                            userAppDetails: List[(Int, Int, String, Array[String])]
-                                          ): Unit = {
+  private def generateFinalRecommendations(topUsers: List[Int], targetUser: Int, userAppDetails: List[(Int, Int, String, Array[String])]): Unit = {
     val targetUserGames = userAppDetails.collect {
       case (userId, gameId, _, _) if userId == targetUser => gameId
     }.toSet
