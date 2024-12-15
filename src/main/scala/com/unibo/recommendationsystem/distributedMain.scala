@@ -9,29 +9,30 @@ object distributedMain {
   def main(args: Array[String]): Unit = {
     val sparkLocal = SparkSession.builder()
       .appName("RecommendationSystem")
-      .config("spark.executor.instances", "7") // One executor per worker.
-      .config("spark.executor.cores", "3") // Use 3 cores per executor.
-      .config("spark.executor.memory", "25g") // ~85% of memory allocated for executors.
-      .config("spark.driver.cores", "2") // Driver cores for master node.
-      .config("spark.driver.memory", "8g") // Sufficient for query execution and small metadata broadcast.
-      .config("spark.shuffle.compress", "true") // Compress shuffle data to optimize I/O.
-      .config("spark.shuffle.spill.compress", "true") // Compress spilled shuffle data.
-      .config("spark.network.timeout", "600s") // Extend timeout for long-running tasks.
-      .config("spark.sql.adaptive.enabled", "true") // Enable adaptive query execution
-      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") // Use Kryo serializer for efficiency.
-      .config("spark.kryoserializer.buffer.max", "256m") // Smaller buffer since data size is moderate.
-      .config("spark.local.dir", "/tmp/spark-temp") // Use SSD for temporary storage.
-      .config("spark.speculation", "true") // Enable speculative execution to handle stragglers.
+      .config("spark.executor.instances", "7") // One executor for each node
+      .config("spark.executor.cores", "3") // 3 cores for all executors
+      .config("spark.executor.memory", "25g") // Executor memory allocation
+      .config("spark.driver.cores", "4") // All cores available on driver
+      .config("spark.driver.memory", "8g") // Driver memory allocation
+      .config("spark.shuffle.compress", "true") // Compress data for shuffle
+      .config("spark.shuffle.spill.compress", "true") // Compress data when shuffle spills
+      .config("spark.network.timeout", "600s") // Timeout ten minutes
+      .config("spark.sql.adaptive.enabled", "true") // Adaptive query execution
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") // Use Kryoserializer
+      .config("spark.kryoserializer.buffer.max", "256m") // Kryo buffer
+      .config("spark.local.dir", "/tmp/spark-temp") // Use SSD for temporary storage
+      .config("spark.speculation", "true") // Enable speculative execution for slow tasks
       .getOrCreate()
 
-    val basePath = "gs://dataproc-staging-us-central1-1020270449793-agano56l/data10rev/dataset1/"
+    val basePath = "gs://dataproc-staging-us-central1-1020270449793-agano56l/data/"
+
     timeUtils.setLogFilePath(basePath+"result.txt")
 
     val targetUser = 4893896
 
-    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations_f.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.24, 44)
-    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games_f.csv")
-    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata_f.json")
+    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.24, 44)
+    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
+    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
 
     /* Initialize and run the MLLIB recommender algorithm.*/
     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)
