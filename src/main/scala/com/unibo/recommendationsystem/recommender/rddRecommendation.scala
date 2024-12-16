@@ -84,7 +84,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
       val allTags = tags.split(",")
       val tfValues = allTags
         .groupBy(identity)
-        .map { case (tag, occurrences) => (tag, occurrences.length.toDouble / allTags.length) } // Calcola TF
+        .map { case (tag, occurrences) => (tag, occurrences.length.toDouble / allTags.length) }
 
       val tfidfValues = tfValues.map { case (tag, tf) => (tag, tf * idfValuesTag.getOrElse(tag, 0.0)) }
 
@@ -142,6 +142,7 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
    * @param targetUser Int, the ID of the target user
    */
   private def generateFinalRecommendations(appIdUserDetails: RDD[(Int, String, String)], topUsersXSimilarity: Array[(String, Double)], gamesData: RDD[(Int, String)], targetUser: Int): Unit = {
+
     val targetUserAppIds = appIdUserDetails
       .filter(_._3 == targetUser.toString)
       .map(_._1)
@@ -150,19 +151,26 @@ class rddRecommendation(spark: SparkSession, dataRec: Dataset[Row], dataGames: D
 
     val similarUsers = topUsersXSimilarity.map(_._1).toSet
 
-    val finalRecommendations = appIdUserDetails
-      .filter { case (appId, _, user) => similarUsers.contains(user) && !targetUserAppIds.contains(appId) }
+    val recommendations = appIdUserDetails
+      .filter { case (appId, _, user) =>
+        similarUsers.contains(user) && !targetUserAppIds.contains(appId)
+      }
       .map { case (appId, _, user) => (appId, user) }
 
-    val recommendationsWithTitle = finalRecommendations
+    val recommendationsWithTitle = recommendations
       .join(gamesData)
-      .map { case (appId, (userId, title)) =>  (appId, (title, Set(userId))) }
+      .map { case (appId, (userId, title)) => (appId, (title, Set(userId))) }
       .reduceByKey { case ((title, userIds1), (_, userIds2)) =>
         (title, userIds1 ++ userIds2)
       }
 
-    recommendationsWithTitle.foreach { case (appId, (title, userIds)) =>
-      println(s"Game ID: $appId, userId: ${userIds.mkString(",")}, title: $title")
-    }
+    val recommendationsString = recommendationsWithTitle
+      .map { case (appId, (title, userIds)) =>
+        s"Game ID: $appId, userId: ${userIds.mkString(",")}, title: $title"
+      }
+      .reduce((line1, line2) => s"$line1\n$line2")
+
+    println(recommendationsString)
   }
+
 }
