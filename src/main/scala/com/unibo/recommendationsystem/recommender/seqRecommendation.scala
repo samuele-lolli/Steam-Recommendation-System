@@ -45,7 +45,7 @@ class seqRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
     }.filter(_._4.nonEmpty)
 
     val userTagsMap = userAppDetails
-      .groupMapReduce(_._1)(details => details._4.filter(_.nonEmpty).toSeq)(_ ++ _)
+      .groupMapReduce(_._1)(details => details._4.toSeq)(_ ++ _)
       .view
       .mapValues(_.mkString(","))
       .toMap

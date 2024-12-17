@@ -67,14 +67,13 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
     val totalUsers = userTagsMap.size
 
     val idfValues = userTagsMap.values
-      .par
       .flatMap(_.split(",").distinct)
       .groupBy(identity)
-      .seq.view
       .mapValues(tags => math.log(totalUsers.toDouble / tags.size))
       .toMap
+      .par
 
-    userTagsMap.par.map { case (userId, tags) =>
+    userTagsMap.map { case (userId, tags) =>
       val tagList = tags.split(",")
       val tfValues = tagList.groupBy(identity).view.mapValues(_.length.toDouble / tagList.length).toMap
       userId -> tfValues.map { case (tag, tf) => tag -> tf * idfValues.getOrElse(tag, 0.0) }
@@ -101,7 +100,6 @@ class parRecommendation(dataRec: Map[Int, Array[Int]], dataGames: Map[Int, Strin
     }
 
     tfidfUserTags
-      .par
       .filterKeys(_ != targetUser)
       .map { case (userId, vector) => userId -> cosineSimilarity(vector) }
       .toList
