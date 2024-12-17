@@ -35,13 +35,14 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
    *         - A DataFrame with detailed information about games and users.
    */
   private def preprocessData(): (DataFrame, DataFrame, DataFrame) = {
-    val userGameDetails = dfRec
+    val userGameDetails = dfRec.select("app_id", "user_id")
       .join(dfGames.select("app_id", "title"), Seq("app_id"))
       .join(dfMetadata.drop("description"), Seq("app_id"))
       .filter(size(col("tags")) > 0)
       .withColumn("normalized_tags", transform(col("tags"), tag => lower(trim(regexp_replace(tag, "\\s+", " ")))))
       .withColumn("tags_string", concat_ws(",", col("normalized_tags")))
       .drop("tags")
+      .drop("normalized_tags")
 
     val userTagData = userGameDetails
       .withColumn("tag_words", split(col("tags_string"), ","))
