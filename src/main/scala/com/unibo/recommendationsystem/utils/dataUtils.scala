@@ -34,7 +34,7 @@ object dataUtils {
         val createDatasets = promptUser("Do you want to create a new custom dataset or use a custom dataset already created? (1/2)")
 
         val dfRec = spark.read.format("csv").option("header", "true").schema(schemaUtils.recSchema)
-          .load(basePath + "recommendations.csv").filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35, seed=44)
+          .load(basePath + "recommendations.csv").filter("is_recommended = true").sample(withReplacement = false, fraction = 0.35, seed=19)
         val dfGames = spark.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
         val dfMetadata = spark.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
         val dfUsers = spark.read.format("csv").option("header", "true").schema(schemaUtils.usersSchema).load(basePath + "users.csv")
