@@ -43,6 +43,7 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
       .withColumn("tags_string", concat_ws(",", col("normalized_tags")))
       .drop("tags")
       .drop("normalized_tags")
+      .cache()
 
     val userTagData = userGameDetails
       .withColumn("tag_words", split(col("tags_string"), ","))
@@ -52,7 +53,7 @@ class sqlRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: DataF
     val explodedTagsData = userTagData
       .withColumn("word", explode(col("tag_words")))
       .select("user_id", "word")
-      .persist(StorageLevel.MEMORY_AND_DISK)
+      .cache()
 
     val gameTitles = dfGames.select("app_id", "title")
 

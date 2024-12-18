@@ -24,15 +24,15 @@ object distributedMain {
       .config("spark.speculation", "true") // Enable speculative execution for slow tasks
       .getOrCreate()
 
-    val basePath = "gs://dataproc-staging-us-central1-1020270449793-agano56l/data/"
+    val basePath = "gs://dataproc-staging-us-central1-451758891749-lrkiovzo/data/"
 
     timeUtils.setLogFilePath(basePath+"result.txt")
 
     val targetUser = 4893896
 
-    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.24, 44)
-    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games.csv")
-    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata.json")
+    val dfRec = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.recSchema).load(basePath + "recommendations_f.csv").filter("is_recommended = true")//.sample(withReplacement = false, 0.25, 44)
+    val dfGames = sparkLocal.read.format("csv").option("header", "true").schema(schemaUtils.gamesSchema).load(basePath + "games_f.csv")
+    val dfMetadata = sparkLocal.read.format("json").schema(schemaUtils.metadataSchema).load(basePath + "games_metadata_f.json")
 
     /* Initialize and run the MLLIB recommender algorithm.*/
     val mllibRecommender = new mllibRecommendation(sparkLocal, dfRec, dfGames, dfMetadata)

@@ -45,12 +45,13 @@ class mllibRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: Dat
       .withColumn("tags_string", concat_ws(",", col("normalized_tags")))
       .drop("tags")
       .drop("normalized_tags")
+      .cache()
 
     val userTagData = userGameDetails
       .withColumn("tag_words", split(col("tags_string"), ","))
       .groupBy("user_id")
       .agg(flatten(collect_list("tag_words")).as("tag_words"))
-      .persist(StorageLevel.MEMORY_AND_DISK)
+      .cache()
 
     val gameTitles = dfGames.select("app_id", "title")
 
@@ -65,7 +66,7 @@ class mllibRecommendation(spark: SparkSession, dfRec: Dataset[Row], dfGames: Dat
    */
   private def calculateTFIDF(userTagData: DataFrame): DataFrame = {
     val hashingTF = new HashingTF().setInputCol("tag_words").setOutputCol("hashedFeatures").setNumFeatures(20000)
-    val tf = hashingTF.transform(userTagData)
+    val tf = hashingTF.transform(userTagData).cache()
 
     val idf = new IDF().setInputCol("hashedFeatures").setOutputCol("features")
     val idfModel = idf.fit(tf)
