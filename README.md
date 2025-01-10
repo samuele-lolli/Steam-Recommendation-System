@@ -145,31 +145,6 @@ gcloud dataproc jobs submit spark \
 --jars C:\path\to\jar\recommendationSystem.jar
 ```
 
-## Issues Encountered and Solutions
-
-### Persistence/Cache
-Some persistence techniques proved ineffective in the cloud. Tests were conducted to optimize strategies based on the execution environment.
-
-### Approach Change
-Initially, the system used game titles instead of tags. This approach was less precise, leading to the decision to rely on tags.
-
-### Custom Datasets
-For the sequential and parallel versions, reduced datasets were generated to support more efficient local testing.
-
-### Output Alignment
-It was necessary to align the results of the different implementations to ensure consistency between approaches (RDD, SQL, MLLIB).
-
-### Time Measurement
-The lazy nature of Spark complicated accurate execution time measurement. Techniques were adopted to improve the accuracy of estimates.
-
-## Conclusions
-
-The project demonstrates the use of both local and distributed techniques to generate personalized recommendations. It offers an analysis of the differences between:
-- Sequential, parallel, and distributed approaches
-- Scalability and performance in cloud environments
-
-The project was created for the **Scalable and Cloud Programming** exam at the University of Bologna (Academic Year 2023-2024) by [Leonardo Vincenzi](https://github.com/leonardovincenzi1998), [Samuele Lolli](https://github.com/samuele-lolli), and [Giulio Bekele](https://github.com/gbekss).
-
 [leonardo]: https://github.com/leonardovincenzi1998
 [samuele]: https://github.com/samuele-lolli
 [giulio]: https://github.com/gbekss
