@@ -1,5 +1,3 @@
-Here is the translation of your `README.md` file into English:
-
 # Steam Game Recommendation System
 
 This project implements a recommendation system based on Scala and Spark, using **TF-IDF** and **Cosine Similarity** to generate personalized recommendations. The system leverages the following dataset from Kaggle:
