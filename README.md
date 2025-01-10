@@ -179,5 +179,3 @@ The project was created for the **Scalable and Cloud Programming** exam at the U
 [scala-plugin-link]: https://plugins.jetbrains.com/plugin/1347-scala
 [spark-plugin-link]: https://plugins.jetbrains.com/plugin/21700-spark
 [ds-link]: https://www.kaggle.com/datasets/antonkozyriev/game-recommendations-on-steam
-
-If you want to update the README.md file with this translation, let me know.
